@@ -16,6 +16,7 @@ SERVICE_NAME = "Wingman"
 SERVICE_VERSION = 1.0
 MY_CHARACTERS = []
 SUGGESTIONS_TO_MAKE = 10
+REJECT_ODD_GENDERS = True
 
 #Character grading settings
 GRADE_WEIGHTS = {'profile play' : 0.01,
@@ -128,9 +129,9 @@ def grade_character(json, my_json):
         if my_json['error'] != '':
                 print("Error grading: {0}".format(my_json['error']))
                 return 0
-        if not get_info_by_name('Orientation') in json['infotags']:
+        if REJECT_ODD_GENDERS and not get_info_by_name('Orientation') in json['infotags']:
                 return 0
-        elif json['infotags'][get_info_by_name('Gender')] != get_infotag('Male') and\
+        elif REJECT_ODD_GENDERS and json['infotags'][get_info_by_name('Gender')] != get_infotag('Male') and\
                    json['infotags'][get_info_by_name('Gender')] != get_infotag('Female'):
                 return 0
         if get_info_by_name('Orientation') in json['infotags']:
@@ -244,8 +245,8 @@ if __name__ == '__main__':
                                         graded_characters[char['identity']] = grade_character(character,my_character)
                                         if graded_characters[char['identity']] >= 0:
                                                 break
-                        except:
-                                print("Couldn't grade {0}".format(char['identity']))
+                        except Exception as e:
+                                print("Couldn't grade {0}: \n{1}".format(char['identity'],str(e)))
         top_chars = sorted(graded_characters, key = (lambda x: graded_characters[x]), reverse = True)
         print('\nAll done, {0}. Consider checking out these profiles: '.format(CHARACTER))
         for _ in range(SUGGESTIONS_TO_MAKE):
