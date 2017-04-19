@@ -17,6 +17,7 @@ SERVICE_VERSION = 1.0
 MY_CHARACTERS = []
 SUGGESTIONS_TO_MAKE = 10
 REJECT_ODD_GENDERS = True
+QUALITY_CUTOFF = 80
 
 #Character grading settings
 GRADE_WEIGHTS = {'profile play' : 0.01,
@@ -129,7 +130,7 @@ def grade_character(json, my_json):
         if my_json['error'] != '':
                 print("Error grading: {0}".format(my_json['error']))
                 return 0
-        if REJECT_ODD_GENDERS and not get_info_by_name('Orientation') in json['infotags']:
+        if REJECT_ODD_GENDERS and not get_info_by_name('Gender') in json['infotags']:
                 return 0
         elif REJECT_ODD_GENDERS and json['infotags'][get_info_by_name('Gender')] != get_infotag('Male') and\
                    json['infotags'][get_info_by_name('Gender')] != get_infotag('Female'):
@@ -206,7 +207,7 @@ def grade_character(json, my_json):
                                         matches -= 0.25 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
                 grades['kink matching'] = cap_grade(matches, EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching']
         else:
-                grades['kink matching'] = cap_grade(len(custom_kinks), EXPECTED_MATCHING_KINKS/2) * GRADE_WEIGHTS['kink matching']
+                grades['kink matching'] = cap_grade(len(custom_kinks), EXPECTED_MATCHING_KINKS*2) * GRADE_WEIGHTS['kink matching']
                 
         total_grade = 0
         for rubric, grade in grades.items():
@@ -246,7 +247,7 @@ if __name__ == '__main__':
                                         if graded_characters[char['identity']] >= 0:
                                                 break
                         except Exception as e:
-                                print("Couldn't grade {0}: \n{1}".format(char['identity'],str(e)))
+                                print("Couldn't grade {0}: \n{1}".format(char['identity'],e))
         top_chars = sorted(graded_characters, key = (lambda x: graded_characters[x]), reverse = True)
         print('\nAll done, {0}. Consider checking out these profiles: '.format(CHARACTER))
         for _ in range(SUGGESTIONS_TO_MAKE):
