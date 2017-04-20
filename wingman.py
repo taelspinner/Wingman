@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 import sys, getopt
 import websockets, asyncio
+import uuid
 from random import shuffle
 
 #Program settings
@@ -14,7 +15,7 @@ CHANNEL = ""
 HOST = "chat.f-list.net"
 PORT = 9722
 SERVICE_NAME = "Wingman"
-SERVICE_VERSION = 1.1
+SERVICE_VERSION = 1.2
 MY_CHARACTERS = []
 SUGGESTIONS_TO_MAKE = 10
 RANDOMIZE_SUGGESTIONS = False
@@ -52,13 +53,14 @@ OVERKINKING_PENALTY_FLOOR = 200
 OVERKINKING_MODIFIER = 5
 MAX_EXTRA_CREDIT = 1.2
 PICTURE_IS_WORTH = 1000
+PREFERRED_COCK_SHAPE = ""
 
 #Caches
 TICKET = None
 INFO_LIST = None
 MAP_LIST = None
-SPELLCHECK = None
 CHARACTER_LIST = None
+SPELLCHECK = None
 
 def post_json(url, forms = {}):
         resp = requests.post(url, data = forms)
@@ -103,9 +105,10 @@ def get_info_by_name(name):
         global INFO_LIST
         if INFO_LIST == None:
                 INFO_LIST = post_json('https://www.f-list.net/json/api/info-list.php')
-        for info in INFO_LIST['info']['3']['items']:
-                if info['name'] == name:
-                        return str(info['id'])
+        for _ in range(3):
+                for info in INFO_LIST['info'][str(_+1)]['items']:
+                        if info['name'] == name:
+                                return str(info['id'])
         return -1
 
 def get_infotag(name):
@@ -117,17 +120,33 @@ def get_infotag(name):
                         return tag['id']
         return -1
 
-def spellcheck_api(text):
+def spellcheck_api(text, inline_modifier):
         text = re.sub("[\[].*?[\]]", "", text)
-        global SPELLCHECK
-        if SPELLCHECK == None:
-                SPELLCHECK = requests.post('http://service.afterthedeadline.com/stats', data = {'key' : 'flists20170418', 'data' : text})
+        got_spellcheck = False
+        while not got_spellcheck:
+                global SPELLCHECK
+                SPELLCHECK = requests.post('http://service.afterthedeadline.com/stats', data = {'key' : SERVICE_NAME + str(SERVICE_VERSION) + str(uuid.getnode()), 'data' : text})
+                timeout = 0
+                if "503 Service Temporarily Unavailable" in SPELLCHECK.text:
+                        while timeout < 100:
+                                timeout += 1
+                else:
+                        got_spellcheck = True
         spellcheck_xml = ET.fromstring(SPELLCHECK.text)
         errors = 0
         for node in spellcheck_xml:
-                if node[0].text == 'spell' and node[1].text != 'raw':
+                #print(node[0].text, node[1].text, node[2].text)
+                if node[0].text == 'grammar':
+                        errors += int(node[2].text)*3
+                elif node[1].text == 'estimate':
                         errors += int(node[2].text)
-        length = (len(text) if len(text) >= SPELLING_ERROR_PER_CHARACTERS else SPELLING_ERROR_PER_CHARACTERS)
+                elif node[1].text == 'hyphenate':
+                        errors += int(node[2].text)/2
+                elif node[1].text == 'misused words':
+                        errors += int(node[2].text)/2
+                elif node[0].text == 'style':
+                        errors += int(node[2].text)/4
+        length = (len(text)+inline_modifier if len(text)+inline_modifier >= SPELLING_ERROR_PER_CHARACTERS else SPELLING_ERROR_PER_CHARACTERS)
         return length/(1 if errors < 1 else errors)
 
 def grade_character(json, my_json):
@@ -159,17 +178,18 @@ def grade_character(json, my_json):
                         return 0 
                 elif my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - male preference') and get_info_by_name('Gender') in json['infotags'] and\
                      json['infotags'][get_info_by_name('Gender')] == get_infotag('Female'):
-                        return 0 
-                
+                        return 0
+        if PREFERRED_COCK_SHAPE != "" and get_info_by_name('Cock shape') in json['infotags'] and json['infotags'][get_info_by_name('Cock shape')] != get_infotag(PREFERRED_COCK_SHAPE):
+                return 0
         grades = defaultdict(int)
         grades['bad species'] = GRADE_WEIGHTS['bad species']
-        if not get_info_by_name('Species') in json['infotags']:
-                grades['bad species'] = 0
-        else:
+        if get_info_by_name('Species') in json['infotags']:
                 for species in BAD_SPECIES_LIST:
                         if species.upper() in json['infotags'][get_info_by_name('Species')].upper():
                                 grades['bad species'] = 0
-                                
+        else:
+             grades['bad species'] = grades['bad species']/2
+             
         name = json['name']
         grades['name punctuation'] = (0 if ' ' in name or '-' in name else 1) * GRADE_WEIGHTS['name punctuation']
         
@@ -184,6 +204,7 @@ def grade_character(json, my_json):
         description_notags = re.sub("[\[].*?[\]]", "", description)
         for autofail_word in AUTOFAIL_DESCRIPTION_LIST:
                 if autofail_word.upper() in description.upper():
+                        #print(autofail_word)
                         return 0
         tags_overused = 1.5
         for tag, max_use in BBCODE_TAG_LIST.items():
@@ -199,15 +220,15 @@ def grade_character(json, my_json):
         grades['profile play'] = (0 if '[icon]'.upper() in description.upper() or '[user]'.upper() in description.upper() else 1) * GRADE_WEIGHTS['profile play']
 
         description_length = len(description_notags)
-        inline_modifier = description.count('[/img]') * PICTURE_IS_WORTH
-        linebreaks_allowed = (description_length+inline_modifier)/LINEBREAK_PER_CHARACTERS
+        inline_modifier = description.count('[img') + len(re.findall(re.compile("\[url=.*?(.png|.jpg|.jpeg)\]"), description)) * PICTURE_IS_WORTH
+        linebreaks_allowed = (description_length+(inline_modifier/2))/LINEBREAK_PER_CHARACTERS
         linebreaks = re.sub("[\[].*?[\]]", "", re.sub("(\[quote\]|\r\n\[url).*?(\[\/quote\]|\[\/url\])","",description, flags = re.DOTALL)).count('\n')
         linebreak_to_text_ratio = linebreaks_allowed / (1 if linebreaks < 1 else linebreaks)
-        grades['description length'] = cap_grade(description_length, EXPECTED_DESCRIPTION_LENGTH) * linebreak_to_text_ratio * GRADE_WEIGHTS['description length']
+        grades['description length'] = cap_grade(description_length+inline_modifier, EXPECTED_DESCRIPTION_LENGTH) * linebreak_to_text_ratio * GRADE_WEIGHTS['description length']
         if grades['description length'] > 1.2*GRADE_WEIGHTS['description length']:
                 grades['description length'] = 1.2*GRADE_WEIGHTS['description length']
 
-        grades['literacy'] = cap_grade(spellcheck_api(description_notags), SPELLING_ERROR_PER_CHARACTERS) * GRADE_WEIGHTS['literacy']
+        grades['literacy'] = cap_grade(spellcheck_api(description_notags, inline_modifier), SPELLING_ERROR_PER_CHARACTERS) * GRADE_WEIGHTS['literacy']
         
         kinks = json['kinks']
         my_kinks = my_json['kinks']
@@ -228,7 +249,7 @@ def grade_character(json, my_json):
                                         matches -= 0.25 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
                 grades['kink matching'] = cap_grade(matches, EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching']
         else:
-                normal_grade = cap_grade(len(custom_kinks), EXPECTED_MATCHING_KINKS*2) * GRADE_WEIGHTS['kink matching']
+                normal_grade = cap_grade(len(custom_kinks), EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching']
                 grades['kink matching'] =  (normal_grade if len(custom_kinks) <= EXPECTED_MAXIMUM_CUSTOM_KINKS else (normal_grade - (len(custom_kinks)/EXPECTED_MAXIMUM_CUSTOM_KINKS) if normal_grade - (len(custom_kinks)/EXPECTED_MAXIMUM_CUSTOM_KINKS) > 0 else 0))
         total_grade = 0
         for rubric, grade in grades.items():
@@ -239,15 +260,15 @@ def grade_character(json, my_json):
 async def hello(ticket):
         async with websockets.connect('ws://{0}:{1}'.format(HOST, PORT)) as websocket:
                 identify = "IDN {{ \"method\": \"ticket\", \"account\": \"{0}\", \"ticket\": \"{1}\", \"character\": \"{4}\", \"cname\": \"{2}\", \"cversion\": \"{3}\" }}".format(USERNAME, ticket, SERVICE_NAME, SERVICE_VERSION, CHARACTER)
-                #print("<< {}".format(identify))
                 await websocket.send(identify)
                 join = "JCH {{\"channel\": \"{0}\"}}".format(CHANNEL)
-                #print("<< {}".format(join))
                 await websocket.send(join)
                 while True:
                         receive = await websocket.recv()
                         if receive.startswith('ERR'):
-                                print("<< {}".format(receive))
+                                print_error(json.loads(receive[4:])['message'])
+                                if 'This command requires that you have logged in.' in receive:
+                                        print('(Try running again.)')
                         if receive.startswith('ICH'):
                                 global CHARACTER_LIST
                                 CHARACTER_LIST = receive[4:]
@@ -255,8 +276,8 @@ async def hello(ticket):
                                 return
 
 if __name__ == '__main__':
+        my_character = request_character(CHARACTER, ticket())
         if len(sys.argv) > 1:
-                my_character = request_character(CHARACTER, ticket())
                 character = request_character(" ".join(sys.argv[1:]), ticket())
                 grade = grade_character(character,my_character)
                 if grade >= 0:
@@ -265,7 +286,6 @@ if __name__ == '__main__':
                 asyncio.get_event_loop().run_until_complete(hello(ticket()))
                 print("Successfully grabbed profile list. {0} is grading them now.".format(SERVICE_NAME))
                 chars = json.loads(CHARACTER_LIST)
-                my_character = request_character(CHARACTER, ticket())
                 graded_characters = defaultdict(int)
                 cur_char = 0
                 for char in chars['users']:
@@ -273,7 +293,7 @@ if __name__ == '__main__':
                         num_spaces = int(50*((len(chars['users'])-cur_char)/len(chars['users'])))
                         while num_dashes+num_spaces < 50:
                                 num_dashes += 1
-                        sys.stdout.write("\r[" + "-"*num_dashes + " "*num_spaces + "]")
+                        sys.stdout.write("\r[" + "="*num_dashes + " "*num_spaces + "]")
                         sys.stdout.flush()
                         if not char['identity'] in MY_CHARACTERS:
                                 try:
@@ -284,7 +304,7 @@ if __name__ == '__main__':
                                                         cur_char += 1
                                                         break
                                 except Exception as e:
-                                        print("Couldn't grade {0}: \n{1}".format(char['identity'],e))
+                                        print("\nCouldn't grade {0}: \n{1}".format(char['identity'],e))
                 print()
                 top_chars = sorted(graded_characters, key = (lambda x: graded_characters[x]), reverse = True)
                 if graded_characters[top_chars[0]] < QUALITY_CUTOFF:
