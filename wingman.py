@@ -255,45 +255,49 @@ async def hello(ticket):
                                 return
 
 if __name__ == '__main__':
-        '''my_character = request_character(CHARACTER, ticket())
-        character = request_character("chris waterwolf", ticket())
-        print('Grade: ',grade_character(character,my_character))'''
-        asyncio.get_event_loop().run_until_complete(hello(ticket()))
-        print("Successfully grabbed profile list. {0} is grading them now.".format(SERVICE_NAME))
-        chars = json.loads(CHARACTER_LIST)
-        my_character = request_character(CHARACTER, ticket())
-        graded_characters = defaultdict(int)
-        cur_char = 0
-        for char in chars['users']:
-                num_dashes = int(50*(cur_char/len(chars['users'])))
-                num_spaces = int(50*((len(chars['users'])-cur_char)/len(chars['users'])))
-                while num_dashes+num_spaces < 50:
-                        num_dashes += 1
-                sys.stdout.write("\r[" + "-"*num_dashes + " "*num_spaces + "]")
-                sys.stdout.flush()
-                if not char['identity'] in MY_CHARACTERS:
-                        try:
-                                while True:
-                                        character = request_character(char['identity'], ticket())
-                                        graded_characters[char['identity']] = grade_character(character,my_character)
-                                        if graded_characters[char['identity']] >= 0:
-                                                cur_char += 1
-                                                break
-                        except Exception as e:
-                                print("Couldn't grade {0}: \n{1}".format(char['identity'],e))
-        print()
-        top_chars = sorted(graded_characters, key = (lambda x: graded_characters[x]), reverse = True)
-        if graded_characters[top_chars[0]] < QUALITY_CUTOFF:
-                print("I couldn't find anyone worth your time, {0}. :( Try again later?".format(CHARACTER))
+        if len(sys.argv) > 1:
+                my_character = request_character(CHARACTER, ticket())
+                character = request_character(" ".join(sys.argv[1:]), ticket())
+                grade = grade_character(character,my_character)
+                if grade >= 0:
+                        print('Grade: ', grade)
         else:
-                cutoff_chars = []
-                for char in top_chars:
-                        if graded_characters[char] >= QUALITY_CUTOFF:
-                                cutoff_chars.append(char)
-                print('\nAll done, {0}. Consider checking out these profiles: '.format(CHARACTER))
-                if RANDOMIZE_SUGGESTIONS:
-                        shuffle(cutoff_chars)
-                for _ in range(SUGGESTIONS_TO_MAKE):
-                        if len(cutoff_chars) > _ :
-                                top = cutoff_chars[_]
-                                print('{0} (Grade: {1})'.format(top, graded_characters[top]))
+                asyncio.get_event_loop().run_until_complete(hello(ticket()))
+                print("Successfully grabbed profile list. {0} is grading them now.".format(SERVICE_NAME))
+                chars = json.loads(CHARACTER_LIST)
+                my_character = request_character(CHARACTER, ticket())
+                graded_characters = defaultdict(int)
+                cur_char = 0
+                for char in chars['users']:
+                        num_dashes = int(50*(cur_char/len(chars['users'])))
+                        num_spaces = int(50*((len(chars['users'])-cur_char)/len(chars['users'])))
+                        while num_dashes+num_spaces < 50:
+                                num_dashes += 1
+                        sys.stdout.write("\r[" + "-"*num_dashes + " "*num_spaces + "]")
+                        sys.stdout.flush()
+                        if not char['identity'] in MY_CHARACTERS:
+                                try:
+                                        while True:
+                                                character = request_character(char['identity'], ticket())
+                                                graded_characters[char['identity']] = grade_character(character,my_character)
+                                                if graded_characters[char['identity']] >= 0:
+                                                        cur_char += 1
+                                                        break
+                                except Exception as e:
+                                        print("Couldn't grade {0}: \n{1}".format(char['identity'],e))
+                print()
+                top_chars = sorted(graded_characters, key = (lambda x: graded_characters[x]), reverse = True)
+                if graded_characters[top_chars[0]] < QUALITY_CUTOFF:
+                        print("I couldn't find anyone worth your time, {0}. :( Try again later?".format(CHARACTER))
+                else:
+                        cutoff_chars = []
+                        for char in top_chars:
+                                if graded_characters[char] >= QUALITY_CUTOFF:
+                                        cutoff_chars.append(char)
+                        print('\nAll done, {0}. Consider checking out these profiles: '.format(CHARACTER))
+                        if RANDOMIZE_SUGGESTIONS:
+                                shuffle(cutoff_chars)
+                        for _ in range(SUGGESTIONS_TO_MAKE):
+                                if len(cutoff_chars) > _ :
+                                        top = cutoff_chars[_]
+                                        print('{0} (Grade: {1})'.format(top, graded_characters[top]))
