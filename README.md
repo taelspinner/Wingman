@@ -27,4 +27,4 @@ Configuration
 Dependencies
 ============
 
-websockets, asyncio
+requests, websockets
