@@ -13,6 +13,7 @@ Setup
 Configuration
 =============
 * SUGGESTIONS_TO_MAKE: How many profiles Wingman will attempt to recommend to you after grading.
+* RANDOMIZE_SUGGESTIONS: If set to True, suggestions will be picked randomly above the cutoff, rather than showing the highest graded.
 * QUALITY_CUTOFF: The minimum grade a profile must receive to be recommended to you.
 * REJECT_ODD_GENDERS: With this enabled, only male and female profiles will be considered.
 * GRADE_WEIGHTS: Total grade weights add up to 1. Alter them to place emphasis on other parts of a profile.
