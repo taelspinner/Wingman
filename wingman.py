@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 import sys, getopt
 import websockets, asyncio
+from random import shuffle
 
 #Program settings
 USERNAME = ""
@@ -13,9 +14,10 @@ CHANNEL = ""
 HOST = "chat.f-list.net"
 PORT = 9722
 SERVICE_NAME = "Wingman"
-SERVICE_VERSION = 1.0
+SERVICE_VERSION = 1.1
 MY_CHARACTERS = []
 SUGGESTIONS_TO_MAKE = 10
+RANDOMIZE_SUGGESTIONS = False
 REJECT_ODD_GENDERS = True
 QUALITY_CUTOFF = 80
 
@@ -31,7 +33,7 @@ GRADE_WEIGHTS = {'profile play' : 0.01,
                  'description length' : 0.15,
                  'kink matching' : 0.3
                  }
-BAD_SPECIES_LIST = ['Human', 'Pony', 'Sergal']
+BAD_SPECIES_LIST = ['Human', 'Homo Sapiens', 'Angel', 'Pony', 'Sergal']
 AUTOFAIL_DESCRIPTION_LIST = ['everypony', 'murr', 'yiff', 'latex', ' owo ', ' uwu ', ' ._. ', ' >.< ', ' :3 ', ' >:3 ', 'Ponyville']
 BBCODE_TAG_LIST = {'[b]' : 4,
                    '[big]' : 2,
@@ -40,6 +42,7 @@ BBCODE_TAG_LIST = {'[b]' : 4,
                    '[color=' : 8
                    }
 EXPECTED_NUMBER_CUSTOM_KINKS = 5
+EXPECTED_MAXIMUM_CUSTOM_KINKS = 100
 EXPECTED_DESCRIPTION_LENGTH = 2500
 EXPECTED_MATCHING_KINKS = 50
 LINEBREAK_PER_CHARACTERS = 150
@@ -67,8 +70,14 @@ def request_ticket():
         if ticket_json['error'] == '':
                 return ticket_json['ticket']
         else:
-                print("Error grabbing ticket: {0}".format(ticket_json['error']))
+                print_error(ticket_json['error'])
                 return 0
+
+def print_error(text):
+        print('Error: ',text)
+        if text == 'Invalid ticket.':
+                global TICKET
+                TICKET = None
 
 def ticket():
         global TICKET
@@ -123,22 +132,34 @@ def spellcheck_api(text):
 
 def grade_character(json, my_json):
         if json['error'] != '':
-                print("Error grading: {0}".format(json['error']))
-                if json['error'] == 'Invalid ticket.':
-                        return -1
-                return 0
+                print_error(json['error'])
+                return -1
         if my_json['error'] != '':
-                print("Error grading: {0}".format(my_json['error']))
-                return 0
+                print_error(my_json['error'])
+                return -1
         if REJECT_ODD_GENDERS and not get_info_by_name('Gender') in json['infotags']:
                 return 0
         elif REJECT_ODD_GENDERS and json['infotags'][get_info_by_name('Gender')] != get_infotag('Male') and\
-                   json['infotags'][get_info_by_name('Gender')] != get_infotag('Female'):
-                return 0
-        if get_info_by_name('Orientation') in json['infotags']:
-                if json['infotags'][get_info_by_name('Orientation')] == get_infotag('Gay') and\
-                   not (my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Gay') or my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - female preference') or my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bisexual') or my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Pansexual')):
+                   json['infotags'][get_info_by_name('Gender')] != get_infotag('Female') and REJECT_ODD_GENDERS:
                         return 0
+        if get_info_by_name('Orientation') in json['infotags']:
+                if json['infotags'][get_info_by_name('Orientation')] == get_infotag('Gay') and my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Straight'):
+                        return 0 
+                elif (json['infotags'][get_info_by_name('Orientation')] == get_infotag('Gay') or my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Gay')) and\
+                     get_info_by_name('Gender') in my_json['infotags'] and get_info_by_name('Gender') in json['infotags'] and\
+                     ((my_json['infotags'][get_info_by_name('Gender')] == get_infotag('Male') and json['infotags'][get_info_by_name('Gender')] == get_infotag('Female')) or\
+                     (my_json['infotags'][get_info_by_name('Gender')] == get_infotag('Female') and json['infotags'][get_info_by_name('Gender')] == get_infotag('Male'))):
+                        return 0 
+                elif (json['infotags'][get_info_by_name('Orientation')] == get_infotag('Straight') or my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Straight')) and\
+                     get_info_by_name('Gender') in my_json['infotags'] and get_info_by_name('Gender') in json['infotags'] and\
+                     my_json['infotags'][get_info_by_name('Gender')] == json['infotags'][get_info_by_name('Gender')]:
+                        return 0 
+                elif my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - female preference') and get_info_by_name('Gender') in json['infotags'] and\
+                     json['infotags'][get_info_by_name('Gender')] == get_infotag('Male'):
+                        return 0 
+                elif my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - male preference') and get_info_by_name('Gender') in json['infotags'] and\
+                     json['infotags'][get_info_by_name('Gender')] == get_infotag('Female'):
+                        return 0 
                 
         grades = defaultdict(int)
         grades['bad species'] = GRADE_WEIGHTS['bad species']
@@ -207,8 +228,8 @@ def grade_character(json, my_json):
                                         matches -= 0.25 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
                 grades['kink matching'] = cap_grade(matches, EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching']
         else:
-                grades['kink matching'] = cap_grade(len(custom_kinks), EXPECTED_MATCHING_KINKS*2) * GRADE_WEIGHTS['kink matching']
-                
+                normal_grade = cap_grade(len(custom_kinks), EXPECTED_MATCHING_KINKS*2) * GRADE_WEIGHTS['kink matching']
+                grades['kink matching'] =  (normal_grade if len(custom_kinks) <= EXPECTED_MAXIMUM_CUSTOM_KINKS else (normal_grade - (len(custom_kinks)/EXPECTED_MAXIMUM_CUSTOM_KINKS) if normal_grade - (len(custom_kinks)/EXPECTED_MAXIMUM_CUSTOM_KINKS) > 0 else 0))
         total_grade = 0
         for rubric, grade in grades.items():
                 #print(rubric + ': ' + str(grade))
@@ -225,7 +246,8 @@ async def hello(ticket):
                 await websocket.send(join)
                 while True:
                         receive = await websocket.recv()
-                        #print("<< {}".format(receive))
+                        if receive.startswith('ERR'):
+                                print("<< {}".format(receive))
                         if receive.startswith('ICH'):
                                 global CHARACTER_LIST
                                 CHARACTER_LIST = receive[4:]
@@ -233,24 +255,45 @@ async def hello(ticket):
                                 return
 
 if __name__ == '__main__':
+        '''my_character = request_character(CHARACTER, ticket())
+        character = request_character("chris waterwolf", ticket())
+        print('Grade: ',grade_character(character,my_character))'''
         asyncio.get_event_loop().run_until_complete(hello(ticket()))
         print("Successfully grabbed profile list. {0} is grading them now.".format(SERVICE_NAME))
         chars = json.loads(CHARACTER_LIST)
         my_character = request_character(CHARACTER, ticket())
         graded_characters = defaultdict(int)
+        cur_char = 0
         for char in chars['users']:
+                num_dashes = int(50*(cur_char/len(chars['users'])))
+                num_spaces = int(50*((len(chars['users'])-cur_char)/len(chars['users'])))
+                while num_dashes+num_spaces < 50:
+                        num_dashes += 1
+                sys.stdout.write("\r[" + "-"*num_dashes + " "*num_spaces + "]")
+                sys.stdout.flush()
                 if not char['identity'] in MY_CHARACTERS:
                         try:
                                 while True:
                                         character = request_character(char['identity'], ticket())
                                         graded_characters[char['identity']] = grade_character(character,my_character)
                                         if graded_characters[char['identity']] >= 0:
+                                                cur_char += 1
                                                 break
                         except Exception as e:
                                 print("Couldn't grade {0}: \n{1}".format(char['identity'],e))
+        print()
         top_chars = sorted(graded_characters, key = (lambda x: graded_characters[x]), reverse = True)
-        print('\nAll done, {0}. Consider checking out these profiles: '.format(CHARACTER))
-        for _ in range(SUGGESTIONS_TO_MAKE):
-                if len(top_chars) > _ and graded_characters[top_chars[_]] > QUALITY_CUTOFF:
-                        top = top_chars[_]
-                        print('{0} (Grade: {1})'.format(top, graded_characters[top]))
+        if graded_characters[top_chars[0]] < QUALITY_CUTOFF:
+                print("I couldn't find anyone worth your time, {0}. :( Try again later?".format(CHARACTER))
+        else:
+                cutoff_chars = []
+                for char in top_chars:
+                        if graded_characters[char] >= QUALITY_CUTOFF:
+                                cutoff_chars.append(char)
+                print('\nAll done, {0}. Consider checking out these profiles: '.format(CHARACTER))
+                if RANDOMIZE_SUGGESTIONS:
+                        shuffle(cutoff_chars)
+                for _ in range(SUGGESTIONS_TO_MAKE):
+                        if len(cutoff_chars) > _ :
+                                top = cutoff_chars[_]
+                                print('{0} (Grade: {1})'.format(top, graded_characters[top]))
