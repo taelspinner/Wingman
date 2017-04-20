@@ -8,7 +8,11 @@ Setup
 2. Select a character to compare kink compatibility with and put their name in the CHARACTER variable.
 3. Put the name of a public channel, or code of a private one, in the CHANNEL variable.
 4. Put the names of all of your characters in the MY_CHARACTERS variable.
-5. Run and wait!
+
+Use
+===
+* Run wingman.py to connect to the specified channel and receive a recommendation list compiled from the users therein.
+* Specify the name of a profile to receive just the grade of that specific profile.
 
 Configuration
 =============
