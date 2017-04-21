@@ -15,12 +15,13 @@ CHANNEL = ""
 HOST = "chat.f-list.net"
 PORT = 9722
 SERVICE_NAME = "Wingman"
-SERVICE_VERSION = 1.2
+SERVICE_VERSION = 1.3
 MY_CHARACTERS = []
 SUGGESTIONS_TO_MAKE = 10
 RANDOMIZE_SUGGESTIONS = False
 REJECT_ODD_GENDERS = True
 QUALITY_CUTOFF = 80
+DISALLOWED_COCK_SHAPES = []
 
 #Character grading settings
 GRADE_WEIGHTS = {'profile play' : 0.01,
@@ -34,8 +35,8 @@ GRADE_WEIGHTS = {'profile play' : 0.01,
                  'description length' : 0.15,
                  'kink matching' : 0.3
                  }
-BAD_SPECIES_LIST = ['Human', 'Homo Sapiens', 'Angel', 'Pony', 'Sergal']
-AUTOFAIL_DESCRIPTION_LIST = ['everypony', 'murr', 'yiff', 'latex', ' owo ', ' uwu ', ' ._. ', ' >.< ', ' :3 ', ' >:3 ', 'Ponyville']
+BAD_SPECIES_LIST = ['Human', 'Homo Sapiens', 'Angel', 'Pony', 'Sergal', 'Taur']
+AUTOFAIL_DESCRIPTION_LIST = ['everypony', 'murr', 'yiff', 'latex', ' owo ', ' uwu ', ' ._. ', ' >.< ', ' :3 ', ' >:3 ', 'Ponyville', 'Equestria']
 BBCODE_TAG_LIST = {'[b]' : 4,
                    '[big]' : 2,
                    '[indent]' : 4,
@@ -46,14 +47,14 @@ EXPECTED_NUMBER_CUSTOM_KINKS = 5
 EXPECTED_MAXIMUM_CUSTOM_KINKS = 100
 EXPECTED_DESCRIPTION_LENGTH = 2500
 EXPECTED_MATCHING_KINKS = 50
+PROBABLE_WIP_DESCRIPTION_LENGTH = 750
 LINEBREAK_PER_CHARACTERS = 150
 SPELLING_ERROR_PER_CHARACTERS = 2500
-UNDERKINKING_BONUS_FLOOR = 5
+UNDERKINKING_BONUS_FLOOR = 20
 OVERKINKING_PENALTY_FLOOR = 200
 OVERKINKING_MODIFIER = 5
 MAX_EXTRA_CREDIT = 1.2
 PICTURE_IS_WORTH = 1000
-PREFERRED_COCK_SHAPE = ""
 
 #Caches
 TICKET = None
@@ -149,6 +150,16 @@ def spellcheck_api(text, inline_modifier):
         length = (len(text)+inline_modifier if len(text)+inline_modifier >= SPELLING_ERROR_PER_CHARACTERS else SPELLING_ERROR_PER_CHARACTERS)
         return length/(1 if errors < 1 else errors)
 
+def get_kinks(json):
+        kinks = dict(json['kinks'])
+        if len(json['custom_kinks']) > 0:
+                check_customs = json['custom_kinks']
+                for custom in check_customs.values():
+                        if len(custom['children']) > 0:
+                                for child in custom['children']:
+                                        kinks[str(child)] = custom['choice']
+        return kinks
+
 def grade_character(json, my_json):
         if json['error'] != '':
                 print_error(json['error'])
@@ -179,8 +190,10 @@ def grade_character(json, my_json):
                 elif my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - male preference') and get_info_by_name('Gender') in json['infotags'] and\
                      json['infotags'][get_info_by_name('Gender')] == get_infotag('Female'):
                         return 0
-        if PREFERRED_COCK_SHAPE != "" and get_info_by_name('Cock shape') in json['infotags'] and json['infotags'][get_info_by_name('Cock shape')] != get_infotag(PREFERRED_COCK_SHAPE):
-                return 0
+        if len(DISALLOWED_COCK_SHAPES) > 0 and get_info_by_name('Cock shape') in json['infotags']:
+                for shape in DISALLOWED_COCK_SHAPES:
+                        if json['infotags'][get_info_by_name('Cock shape')] == get_infotag(shape):
+                                return 0
         grades = defaultdict(int)
         grades['bad species'] = GRADE_WEIGHTS['bad species']
         if get_info_by_name('Species') in json['infotags']:
@@ -220,7 +233,7 @@ def grade_character(json, my_json):
         grades['profile play'] = (0 if '[icon]'.upper() in description.upper() or '[user]'.upper() in description.upper() else 1) * GRADE_WEIGHTS['profile play']
 
         description_length = len(description_notags)
-        inline_modifier = description.count('[img') + len(re.findall(re.compile("\[url=.*?(.png|.jpg|.jpeg)\]"), description)) * PICTURE_IS_WORTH
+        inline_modifier = (description.count('[img') + (len(images)/5 if description_length < EXPECTED_DESCRIPTION_LENGTH and description_length > PROBABLE_WIP_DESCRIPTION_LENGTH else 0) + len(re.findall(re.compile("\[url=.*?(.png|.jpg|.jpeg|.gif)\]"), description))) * PICTURE_IS_WORTH
         linebreaks_allowed = (description_length+(inline_modifier/2))/LINEBREAK_PER_CHARACTERS
         linebreaks = re.sub("[\[].*?[\]]", "", re.sub("(\[quote\]|\r\n\[url).*?(\[\/quote\]|\[\/url\])","",description, flags = re.DOTALL)).count('\n')
         linebreak_to_text_ratio = linebreaks_allowed / (1 if linebreaks < 1 else linebreaks)
@@ -228,10 +241,13 @@ def grade_character(json, my_json):
         if grades['description length'] > 1.2*GRADE_WEIGHTS['description length']:
                 grades['description length'] = 1.2*GRADE_WEIGHTS['description length']
 
-        grades['literacy'] = cap_grade(spellcheck_api(description_notags, inline_modifier), SPELLING_ERROR_PER_CHARACTERS) * GRADE_WEIGHTS['literacy']
+        if description_length >= PROBABLE_WIP_DESCRIPTION_LENGTH:
+                grades['literacy'] = cap_grade(spellcheck_api(description_notags, inline_modifier), SPELLING_ERROR_PER_CHARACTERS) * GRADE_WEIGHTS['literacy']
+        else:
+                grades['literacy'] = cap_grade(description_length, PROBABLE_WIP_DESCRIPTION_LENGTH) * GRADE_WEIGHTS['literacy']
         
-        kinks = json['kinks']
-        my_kinks = my_json['kinks']
+        kinks = get_kinks(json)
+        my_kinks = get_kinks(my_json)
         matches = 0
         num_mismatches = 0
         if not len(kinks) <= UNDERKINKING_BONUS_FLOOR:
@@ -244,9 +260,9 @@ def grade_character(json, my_json):
                                 elif (rating == 'maybe' and kinks[kink] == 'yes') or (rating == 'maybe' and kinks[kink] == 'fave'):
                                         matches += 0.25
                                 elif (rating == 'no' and kinks[kink] == 'fave') or (rating == 'fave' and kinks[kink] == 'no'):
-                                        matches -= 0.5 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
+                                        matches -= 1 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
                                 elif (rating == 'no' and kinks[kink] == 'yes') or (rating == 'yes' and kinks[kink] == 'no'):
-                                        matches -= 0.25 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
+                                        matches -= 0.5 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
                 grades['kink matching'] = cap_grade(matches, EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching']
         else:
                 normal_grade = cap_grade(len(custom_kinks), EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching']
@@ -261,10 +277,18 @@ async def hello(ticket):
         async with websockets.connect('ws://{0}:{1}'.format(HOST, PORT)) as websocket:
                 identify = "IDN {{ \"method\": \"ticket\", \"account\": \"{0}\", \"ticket\": \"{1}\", \"character\": \"{4}\", \"cname\": \"{2}\", \"cversion\": \"{3}\" }}".format(USERNAME, ticket, SERVICE_NAME, SERVICE_VERSION, CHARACTER)
                 await websocket.send(identify)
+                pause = 0
+                while pause < 100:
+                        pause += 1
                 join = "JCH {{\"channel\": \"{0}\"}}".format(CHANNEL)
                 await websocket.send(join)
                 while True:
                         receive = await websocket.recv()
+                        '''try:
+                                non_bmp_map = dict.fromkeys(range(0x10000, sys.maxunicode + 1), 0xfffd)
+                                print(receive.translate(non_bmp_map))
+                        finally:
+                                pass'''
                         if receive.startswith('ERR'):
                                 print_error(json.loads(receive[4:])['message'])
                                 if 'This command requires that you have logged in.' in receive:
