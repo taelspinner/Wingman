@@ -172,6 +172,7 @@ def test_orientation_matching(json1, json2):
                 elif json1['infotags'][get_info_by_name('Orientation')] == get_infotag('Straight') and get_info_by_name('Gender') in json1['infotags'] and get_info_by_name('Gender') in json2['infotags'] and\
                      json1['infotags'][get_info_by_name('Gender')] == json2['infotags'][get_info_by_name('Gender')]:
                         return False
+        return True
 
 def grade_character(json, my_json):
         if json['error'] != '':
