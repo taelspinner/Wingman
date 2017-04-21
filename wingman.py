@@ -160,6 +160,19 @@ def get_kinks(json):
                                         kinks[str(child)] = custom['choice']
         return kinks
 
+def test_orientation_matching(json1, json2):
+        if get_info_by_name('Orientation') in json1['infotags'] and get_info_by_name('Orientation') in json2['infotags']:
+                if json1['infotags'][get_info_by_name('Orientation')] == get_infotag('Gay') and json2['infotags'][get_info_by_name('Orientation')] == get_infotag('Straight'):
+                        return False
+        if get_info_by_name('Orientation') in json1['infotags']:
+                if json1['infotags'][get_info_by_name('Orientation')] == get_infotag('Gay') and get_info_by_name('Gender') in json1['infotags'] and get_info_by_name('Gender') in json2['infotags'] and\
+                     ((json1['infotags'][get_info_by_name('Gender')] == get_infotag('Male') and json2['infotags'][get_info_by_name('Gender')] == get_infotag('Female')) or\
+                     (json1['infotags'][get_info_by_name('Gender')] == get_infotag('Female') and json2['infotags'][get_info_by_name('Gender')] == get_infotag('Male'))):
+                        return False
+                elif json1['infotags'][get_info_by_name('Orientation')] == get_infotag('Straight') and get_info_by_name('Gender') in json1['infotags'] and get_info_by_name('Gender') in json2['infotags'] and\
+                     json1['infotags'][get_info_by_name('Gender')] == json2['infotags'][get_info_by_name('Gender')]:
+                        return False
+
 def grade_character(json, my_json):
         if json['error'] != '':
                 print_error(json['error'])
@@ -172,19 +185,12 @@ def grade_character(json, my_json):
         elif REJECT_ODD_GENDERS and json['infotags'][get_info_by_name('Gender')] != get_infotag('Male') and\
                    json['infotags'][get_info_by_name('Gender')] != get_infotag('Female') and REJECT_ODD_GENDERS:
                         return 0
-        if get_info_by_name('Orientation') in json['infotags']:
-                if json['infotags'][get_info_by_name('Orientation')] == get_infotag('Gay') and my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Straight'):
-                        return 0 
-                elif (json['infotags'][get_info_by_name('Orientation')] == get_infotag('Gay') or my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Gay')) and\
-                     get_info_by_name('Gender') in my_json['infotags'] and get_info_by_name('Gender') in json['infotags'] and\
-                     ((my_json['infotags'][get_info_by_name('Gender')] == get_infotag('Male') and json['infotags'][get_info_by_name('Gender')] == get_infotag('Female')) or\
-                     (my_json['infotags'][get_info_by_name('Gender')] == get_infotag('Female') and json['infotags'][get_info_by_name('Gender')] == get_infotag('Male'))):
-                        return 0 
-                elif (json['infotags'][get_info_by_name('Orientation')] == get_infotag('Straight') or my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Straight')) and\
-                     get_info_by_name('Gender') in my_json['infotags'] and get_info_by_name('Gender') in json['infotags'] and\
-                     my_json['infotags'][get_info_by_name('Gender')] == json['infotags'][get_info_by_name('Gender')]:
-                        return 0 
-                elif my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - female preference') and get_info_by_name('Gender') in json['infotags'] and\
+        if not test_orientation_matching(json, my_json):
+                return 0
+        if not test_orientation_matching(my_json, json):
+                return 0
+        if get_info_by_name('Orientation') in my_json['infotags']:
+                if my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - female preference') and get_info_by_name('Gender') in json['infotags'] and\
                      json['infotags'][get_info_by_name('Gender')] == get_infotag('Male'):
                         return 0 
                 elif my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - male preference') and get_info_by_name('Gender') in json['infotags'] and\
