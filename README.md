@@ -23,7 +23,7 @@ Configuration
 * GRADE_WEIGHTS: Total grade weights add up to 1. Alter them to place emphasis on other parts of a profile.
 * BAD_SPECIES_LIST: The words in this list will incur a grading penalty if the profile's species contains them.
 * AUTOFAIL_DESCRIPTION_LIST: Anything in this list found in a profile's description will result in the profile being discarded.
-* PREFERRED_COCK_SHAPE: If specified, any profile that lists a cock shape and doesn't match will be discarded.
+* DISALLOWED_COCK_SHAPES: If specified, any profile that has a cock shape in this list will be discarded.
 
 Dependencies
 ============
