@@ -15,7 +15,7 @@ CHANNEL = ""
 HOST = "chat.f-list.net"
 PORT = 9722
 SERVICE_NAME = "Wingman"
-SERVICE_VERSION = 1.3
+SERVICE_VERSION = 1.4
 MY_CHARACTERS = []
 SUGGESTIONS_TO_MAKE = 10
 RANDOMIZE_SUGGESTIONS = False
@@ -36,7 +36,7 @@ GRADE_WEIGHTS = {'profile play' : 0.01,
                  'kink matching' : 0.3
                  }
 BAD_SPECIES_LIST = ['Human', 'Homo Sapiens', 'Angel', 'Pony', 'Sergal', 'Taur']
-AUTOFAIL_DESCRIPTION_LIST = ['everypony', 'murr', 'yiff', 'latex', ' owo ', ' uwu ', ' ._. ', ' >.< ', ' :3 ', ' >:3 ', 'Ponyville', 'Equestria']
+AUTOFAIL_DESCRIPTION_LIST = ['everypony', 'murr', 'yiff', 'latex', ' owo ', ' uwu ', ' ._.', ' >.<', ' :3', ' >:3', ' >_>', 'Ponyville', 'Equestria']
 BBCODE_TAG_LIST = {'[b]' : 4,
                    '[big]' : 2,
                    '[indent]' : 4,
@@ -64,7 +64,13 @@ CHARACTER_LIST = None
 SPELLCHECK = None
 
 def post_json(url, forms = {}):
-        resp = requests.post(url, data = forms)
+        succeeded = False
+        while not succeeded:
+                try:
+                        resp = requests.post(url, data = forms, timeout=10)
+                        succeeded = True
+                except Exception as e:
+                        print_error(e)
         return resp.json()
 
 def request_ticket():
@@ -145,7 +151,7 @@ def spellcheck_api(text, inline_modifier):
                         errors += int(node[2].text)/2
                 elif node[1].text == 'misused words':
                         errors += int(node[2].text)/2
-                elif node[0].text == 'style':
+                elif node[0].text == 'style' and node[1].text != 'complex phrases':
                         errors += int(node[2].text)/4
         length = (len(text)+inline_modifier if len(text)+inline_modifier >= SPELLING_ERROR_PER_CHARACTERS else SPELLING_ERROR_PER_CHARACTERS)
         return length/(1 if errors < 1 else errors)
@@ -211,7 +217,7 @@ def grade_character(json, my_json):
              grades['bad species'] = grades['bad species']/2
              
         name = json['name']
-        grades['name punctuation'] = (0 if ' ' in name or '-' in name else 1) * GRADE_WEIGHTS['name punctuation']
+        grades['name punctuation'] = (0 if ' ' in name or '-' in name or '_' in name else 1) * GRADE_WEIGHTS['name punctuation']
         
         images = json['images']
         grades['no images'] = (0 if len(images) == 0 else 1) * GRADE_WEIGHTS['no images']
@@ -244,11 +250,13 @@ def grade_character(json, my_json):
         linebreaks_allowed = (description_length+(inline_modifier/2))/LINEBREAK_PER_CHARACTERS
         linebreaks = re.sub("[\[].*?[\]]", "", re.sub("(\[quote\]|\r\n\[url).*?(\[\/quote\]|\[\/url\])","",description, flags = re.DOTALL)).count('\n')
         linebreak_to_text_ratio = linebreaks_allowed / (1 if linebreaks < 1 else linebreaks)
+        if linebreak_to_text_ratio > MAX_EXTRA_CREDIT:
+                linebreak_to_text_ratio = MAX_EXTRA_CREDIT
         grades['description length'] = cap_grade(description_length+inline_modifier, EXPECTED_DESCRIPTION_LENGTH) * linebreak_to_text_ratio * GRADE_WEIGHTS['description length']
         if grades['description length'] > 1.2*GRADE_WEIGHTS['description length']:
                 grades['description length'] = 1.2*GRADE_WEIGHTS['description length']
 
-        if description_length >= PROBABLE_WIP_DESCRIPTION_LENGTH:
+        if (description_length+inline_modifier) >= PROBABLE_WIP_DESCRIPTION_LENGTH:
                 grades['literacy'] = cap_grade(spellcheck_api(description_notags, inline_modifier), SPELLING_ERROR_PER_CHARACTERS) * GRADE_WEIGHTS['literacy']
         else:
                 grades['literacy'] = cap_grade(description_length, PROBABLE_WIP_DESCRIPTION_LENGTH) * GRADE_WEIGHTS['literacy']
@@ -270,7 +278,7 @@ def grade_character(json, my_json):
                                         matches -= 1 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
                                 elif (rating == 'no' and kinks[kink] == 'yes') or (rating == 'yes' and kinks[kink] == 'no'):
                                         matches -= 0.5 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
-                grades['kink matching'] = cap_grade(matches, EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching']
+                grades['kink matching'] = cap_grade((matches if matches >= 0 else 0), EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching']
         else:
                 normal_grade = cap_grade(len(custom_kinks), EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching']
                 grades['kink matching'] =  (normal_grade if len(custom_kinks) <= EXPECTED_MAXIMUM_CUSTOM_KINKS else (normal_grade - (len(custom_kinks)/EXPECTED_MAXIMUM_CUSTOM_KINKS) if normal_grade - (len(custom_kinks)/EXPECTED_MAXIMUM_CUSTOM_KINKS) > 0 else 0))
