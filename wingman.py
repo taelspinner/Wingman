@@ -84,7 +84,7 @@ def request_ticket():
 
 def print_error(text):
         print('Error: ',text)
-        if text == 'Invalid ticket.':
+        if 'ticket' in text:
                 global TICKET
                 TICKET = None
 
@@ -293,7 +293,7 @@ async def hello(ticket):
                 identify = "IDN {{ \"method\": \"ticket\", \"account\": \"{0}\", \"ticket\": \"{1}\", \"character\": \"{4}\", \"cname\": \"{2}\", \"cversion\": \"{3}\" }}".format(USERNAME, ticket, SERVICE_NAME, SERVICE_VERSION, CHARACTER)
                 await websocket.send(identify)
                 pause = 0
-                while pause < 100:
+                while pause < 1000:
                         pause += 1
                 join = "JCH {{\"channel\": \"{0}\"}}".format(CHANNEL)
                 await websocket.send(join)
