@@ -15,11 +15,11 @@ CHANNEL = ""
 HOST = "chat.f-list.net"
 PORT = 9722
 SERVICE_NAME = "Wingman"
-SERVICE_VERSION = 1.4
+SERVICE_VERSION = 1.5
 MY_CHARACTERS = []
 SUGGESTIONS_TO_MAKE = 10
 RANDOMIZE_SUGGESTIONS = False
-REJECT_ODD_GENDERS = True
+REJECT_ODD_GENDERS = False
 QUALITY_CUTOFF = 80
 DISALLOWED_COCK_SHAPES = []
 
@@ -35,8 +35,8 @@ GRADE_WEIGHTS = {'profile play' : 0.01,
                  'description length' : 0.15,
                  'kink matching' : 0.3
                  }
-BAD_SPECIES_LIST = ['Human', 'Homo Sapiens', 'Angel', 'Pony', 'Sergal', 'Taur']
-AUTOFAIL_DESCRIPTION_LIST = ['everypony', 'murr', 'yiff', 'latex', ' owo ', ' uwu ', ' ._.', ' >.<', ' :3', ' >:3', ' >_>', 'Ponyville', 'Equestria']
+BAD_SPECIES_LIST = []
+AUTOFAIL_DESCRIPTION_LIST = []
 BBCODE_TAG_LIST = {'[b]' : 4,
                    '[big]' : 2,
                    '[indent]' : 4,
@@ -190,7 +190,7 @@ def grade_character(json, my_json):
         if REJECT_ODD_GENDERS and not get_info_by_name('Gender') in json['infotags']:
                 return 0
         elif REJECT_ODD_GENDERS and json['infotags'][get_info_by_name('Gender')] != get_infotag('Male') and\
-                   json['infotags'][get_info_by_name('Gender')] != get_infotag('Female') and REJECT_ODD_GENDERS:
+                   json['infotags'][get_info_by_name('Gender')] != get_infotag('Female'):
                         return 0
         if not test_orientation_matching(json, my_json):
                 return 0
@@ -203,10 +203,17 @@ def grade_character(json, my_json):
                 elif my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - male preference') and get_info_by_name('Gender') in json['infotags'] and\
                      json['infotags'][get_info_by_name('Gender')] == get_infotag('Female'):
                         return 0
-        if len(DISALLOWED_COCK_SHAPES) > 0 and get_info_by_name('Cock shape') in json['infotags']:
+        if len(DISALLOWED_COCK_SHAPES) > 0 and get_info_by_name('Cock shape') in json['infotags'] and (not get_info_by_name('Gender') in json['infotags'] or json['infotags'][get_info_by_name('Gender')] != get_infotag('Female')):
                 for shape in DISALLOWED_COCK_SHAPES:
                         if json['infotags'][get_info_by_name('Cock shape')] == get_infotag(shape):
                                 return 0
+        try:
+                with open('blacklist.txt', 'a+') as blacklist:
+                        if json['name'] in [x.strip() for x in blacklist.readlines()]:
+                               return 0
+        except IOError:
+                pass
+                        
         grades = defaultdict(int)
         grades['bad species'] = GRADE_WEIGHTS['bad species']
         if get_info_by_name('Species') in json['infotags']:
