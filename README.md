@@ -13,6 +13,7 @@ Use
 ===
 * Run wingman.py to connect to the specified channel and receive a recommendation list compiled from the users therein.
 * Specify the name of a profile to receive just the grade of that specific profile.
+* After the first time you run the script, a blacklist.txt file will be created in the folder. Put names of profiles in there to not have them recommended to you anymore.
 
 Configuration
 =============
