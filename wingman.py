@@ -35,8 +35,8 @@ GRADE_WEIGHTS = {'profile play' : 0.01,
                  'description length' : 0.15,
                  'kink matching' : 0.3
                  }
-BAD_SPECIES_LIST = []
-AUTOFAIL_DESCRIPTION_LIST = []
+BAD_SPECIES_LIST = ['Human', 'Homo Sapiens', 'Angel', 'Pony', 'Sergal', 'Taur']
+AUTOFAIL_DESCRIPTION_LIST = ['everypony', 'murr', 'yiff', 'latex', ' owo ', ' uwu ', ' ._.', ' >.<', ' :3', ' >:3', ' >_>', 'Ponyville', 'Equestria']
 BBCODE_TAG_LIST = {'[b]' : 4,
                    '[big]' : 2,
                    '[indent]' : 4,
@@ -208,7 +208,8 @@ def grade_character(json, my_json):
                         if json['infotags'][get_info_by_name('Cock shape')] == get_infotag(shape):
                                 return 0
         try:
-                with open('blacklist.txt', 'a+') as blacklist:
+                with open('blacklist.txt', 'r+') as blacklist:
+                        blacklist.seek(0)
                         if json['name'] in [x.strip() for x in blacklist.readlines()]:
                                return 0
         except IOError:
