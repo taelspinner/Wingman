@@ -208,7 +208,7 @@ def grade_character(json, my_json):
                         if json['infotags'][get_info_by_name('Cock shape')] == get_infotag(shape):
                                 return 0
         try:
-                with open('blacklist.txt', 'r+') as blacklist:
+                with open('blacklist.txt', 'a+') as blacklist:
                         blacklist.seek(0)
                         if json['name'] in [x.strip() for x in blacklist.readlines()]:
                                return 0
