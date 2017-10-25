@@ -376,7 +376,7 @@ if __name__ == '__main__':
 			bl = input('Do you want to review them for your blacklist? (Y/n) ')
 			if bl.upper() != 'N':
 					with open('blacklist.txt', 'a+') as blacklist:
-							for char in cutoff_chars:
+							for char in cutoff_chars[:SUGGESTIONS_TO_MAKE]:
 									webbrowser.open('https://f-list.net/c/{0}'.format(char),new=2)
 									bl = input('Is {0} someone you might ever want to play with? (y/N) '.format(char))
 									if bl.upper() != 'Y':
