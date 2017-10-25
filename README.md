@@ -11,7 +11,7 @@ Setup
 
 Use
 ===
-* Run wingman.py to connect to the specified channel and receive a recommendation list compiled from the users therein.
+* Run wingman.py to connect to the specified channel and receive a recommendation list compiled from the users therein. You will be logged out when the script starts if you're on that character, but can log in while grading is being done safely.
 * Specify the name of a profile to receive just the grade of that specific profile.
 * After the first time you run the script, a blacklist.txt file will be created in the folder. Put names of profiles in there to not have them recommended to you anymore.
 
