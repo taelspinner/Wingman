@@ -36,7 +36,7 @@ GRADE_WEIGHTS = {'profile play' : 0.01,
 		 'description length' : 0.15,
 		 'kink matching' : 0.3
 		 }
-BAD_SPECIES_LIST = ['Human', 'Homo Sapiens', 'Angel', 'Pony', 'Sergal', 'Taur']
+BAD_SPECIES_LIST = []
 GOOD_SPECIES_LIST = []
 AUTOFAIL_DESCRIPTION_LIST = ['everypony', 'murr', 'yiff', 'latex', ' owo ', ' uwu ', ' ._.', ' >.<', ' :3', ' >:3', ' >_>', 'Ponyville', 'Equestria']
 BBCODE_TAG_LIST = {'[b]' : 4,
