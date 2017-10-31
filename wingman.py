@@ -16,7 +16,7 @@ CHANNEL = ""
 HOST = "chat.f-list.net"
 PORT = 9722
 SERVICE_NAME = "Wingman"
-SERVICE_VERSION = 1.6
+SERVICE_VERSION = 1.7
 MY_CHARACTERS = []
 SUGGESTIONS_TO_MAKE = 10
 RANDOMIZE_SUGGESTIONS = False
@@ -38,7 +38,7 @@ GRADE_WEIGHTS = {'profile play' : 0.01,
 		 }
 BAD_SPECIES_LIST = []
 GOOD_SPECIES_LIST = []
-AUTOFAIL_DESCRIPTION_LIST = ['everypony', 'murr', 'yiff', 'latex', ' owo ', ' uwu ', ' ._.', ' >.<', ' :3', ' >:3', ' >_>', 'Ponyville', 'Equestria']
+AUTOFAIL_DESCRIPTION_LIST = ['murr', 'yiff', ' owo ', ' uwu ', ' ._.', ' >.<', ' :3', ' >:3', ' >_>']
 BBCODE_TAG_LIST = {'[b]' : 4,
 		   '[big]' : 2,
 		   '[indent]' : 4,
@@ -64,6 +64,8 @@ INFO_LIST = None
 MAP_LIST = None
 CHARACTER_LIST = None
 SPELLCHECK = None
+BOOKMARKS = None
+BLACKLIST = None
 
 def post_json(url, forms = {}):
 	succeeded = False
@@ -100,6 +102,13 @@ def request_character(name, ticket):
 	forms = {"account" : USERNAME, "ticket" : ticket, "name" : name}
 	character_json = post_json('https://www.f-list.net/json/api/character-data.php', forms)
 	return character_json
+	
+def bookmarks(ticket):
+	global BOOKMARKS
+	forms = {"account" : USERNAME, "ticket" : ticket}
+	if BOOKMARKS == None:
+		BOOKMARKS = post_json('https://www.f-list.net/json/api/bookmark-list.php', forms)
+	return BOOKMARKS
 
 def cap_grade(num_points, max_points):
 	grade = num_points/max_points
@@ -114,8 +123,8 @@ def get_info_by_name(name):
 	global INFO_LIST
 	if INFO_LIST == None:
 		INFO_LIST = post_json('https://www.f-list.net/json/api/info-list.php')
-	for _ in range(3):
-		for info in INFO_LIST['info'][str(_+1)]['items']:
+	for _ in range(4):
+		for info in INFO_LIST['info'][str(_+(1 if _ < 3 else 2))]['items']:
 			if info['name'] == name:
 				return str(info['id'])
 	return -1
@@ -181,6 +190,14 @@ def test_orientation_matching(json1, json2):
 		     json1['infotags'][get_info_by_name('Gender')] == json2['infotags'][get_info_by_name('Gender')]:
 			return False
 	return True
+	
+def test_furry_matching(json1, json2):
+	if get_info_by_name('Furry preference') in json1['infotags'] and get_info_by_name('Body type') in json2['infotags']:
+		if json1['infotags'][get_info_by_name('Furry preference')] == get_infotag('No furry characters, just humans') and json2['infotags'][get_info_by_name('Body type')] == get_infotag('Anthro'):
+			return False
+		elif json1['infotags'][get_info_by_name('Furry preference')] == get_infotag('No humans, just furry characters') and json2['infotags'][get_info_by_name('Body type')] == get_infotag('Human'):
+			return False
+	return True
 
 def grade_character(json, my_json):
 	if json['error'] != '':
@@ -198,6 +215,10 @@ def grade_character(json, my_json):
 		return 0
 	if not test_orientation_matching(my_json, json):
 		return 0
+	if not test_furry_matching(json, my_json):
+		return 0
+	if not test_furry_matching(my_json, json):
+		return 0
 	if get_info_by_name('Orientation') in my_json['infotags']:
 		if my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - female preference') and get_info_by_name('Gender') in json['infotags'] and\
 		     json['infotags'][get_info_by_name('Gender')] == get_infotag('Male'):
@@ -210,10 +231,13 @@ def grade_character(json, my_json):
 			if json['infotags'][get_info_by_name('Cock shape')] == get_infotag(shape):
 				return 0
 	try:
-		with open('blacklist.txt', 'a+') as blacklist:
-			blacklist.seek(0)
-			if json['name'] in [x.strip() for x in blacklist.readlines()]:
-			       return 0
+		global BLACKLIST
+		if BLACKLIST == None:
+			with open('blacklist.txt', 'a+') as blacklist:
+				blacklist.seek(0)
+				BLACKLIST = blacklist.readlines()
+		if json['name'] in [x.strip() for x in BLACKLIST]:
+			   return 0
 	except IOError:
 		pass
 			
@@ -230,7 +254,12 @@ def grade_character(json, my_json):
 	     grades['bad species'] = grades['bad species']/2
 	     
 	name = json['name']
-	grades['name punctuation'] = (0 if ' ' in name or '-' in name or '_' in name else 1) * GRADE_WEIGHTS['name punctuation']
+	
+	bookmark = bookmarks(ticket())
+	if bookmark['error'] == '' and name in bookmark['characters']:
+		return 0
+	
+	grades['name punctuation'] = (0 if ' ' in name or '-' in name or '_' in name or name.capitalize() != name else 1) * GRADE_WEIGHTS['name punctuation']
 	
 	images = json['images']
 	grades['no images'] = (0 if len(images) == 0 else 1) * GRADE_WEIGHTS['no images']
@@ -305,9 +334,9 @@ async def hello(ticket):
 	async with websockets.connect('ws://{0}:{1}'.format(HOST, PORT)) as websocket:
 		identify = "IDN {{ \"method\": \"ticket\", \"account\": \"{0}\", \"ticket\": \"{1}\", \"character\": \"{4}\", \"cname\": \"{2}\", \"cversion\": \"{3}\" }}".format(USERNAME, ticket, SERVICE_NAME, SERVICE_VERSION, CHARACTER)
 		await websocket.send(identify)
-		pause = 0
-		while pause < 1000:
-			pause += 1
+		while True:
+			receive = await websocket.recv()
+			break
 		join = "JCH {{\"channel\": \"{0}\"}}".format(CHANNEL)
 		await websocket.send(join)
 		while True:
@@ -320,7 +349,9 @@ async def hello(ticket):
 			if receive.startswith('ERR'):
 				print_error(json.loads(receive[4:])['message'])
 				if 'This command requires that you have logged in.' in receive:
-					print('(Try running again.)')
+					print('(Sorry about that. Try running again.)')
+				if 'Could not locate the requested channel.' in receive:
+					quit()
 			if receive.startswith('ICH'):
 				global CHARACTER_LIST
 				CHARACTER_LIST = receive[4:]
@@ -335,7 +366,11 @@ if __name__ == '__main__':
 		if grade >= 0:
 			print('Grade: ', grade)
 	else:
-		asyncio.get_event_loop().run_until_complete(hello(ticket()))
+		try:
+			asyncio.get_event_loop().run_until_complete(hello(ticket()))
+		except websockets.ConnectionClosed:
+			print('The connection was closed prematurely.')
+			quit()
 		print("Successfully grabbed profile list. {0} is grading them now.".format(SERVICE_NAME))
 		chars = json.loads(CHARACTER_LIST)
 		graded_characters = defaultdict(int)
@@ -349,12 +384,17 @@ if __name__ == '__main__':
 			sys.stdout.flush()
 			if not char['identity'] in MY_CHARACTERS:
 				try:
+					num_errors = 0
 					while True:
 						character = request_character(char['identity'], ticket())
 						graded_characters[char['identity']] = grade_character(character,my_character)
-						if graded_characters[char['identity']] >= 0:
+						if graded_characters[char['identity']] >= 0 or num_errors > 10:
 							cur_char += 1
+							if num_errors > 10:
+								print("Couldn't grade {0}.".format(char['identity']))
 							break
+						else:
+							num_errors += 1
 				except Exception as e:
 					print("\nCouldn't grade {0}: \n{1}".format(char['identity'],e))
 		print()
@@ -374,12 +414,12 @@ if __name__ == '__main__':
 					top = cutoff_chars[_]
 					print('{0} (Grade: {1})'.format(top, graded_characters[top]))
 			bl = input('Do you want to review them for your blacklist? (Y/n) ')
-			if bl.upper() != 'N':
+			if bl.upper() != 'N' and bl.upper() != 'NO':
 					with open('blacklist.txt', 'a+') as blacklist:
 							for char in cutoff_chars[:SUGGESTIONS_TO_MAKE]:
 									webbrowser.open('https://f-list.net/c/{0}'.format(char),new=2)
 									bl = input('Is {0} someone you might ever want to play with? (y/N) '.format(char))
-									if bl.upper() != 'Y':
+									if bl.upper() != 'Y' and bl.upper() != 'YES':
 											blacklist.write('{0}\n'.format(char))
 			if len(cutoff_chars) < SUGGESTIONS_TO_MAKE:
 				print('Consider setting your QUALITY_CUTOFF configuration a little lower, or trying again during a busier time of day.')
