@@ -16,7 +16,7 @@ CHANNEL = ""
 HOST = "chat.f-list.net"
 PORT = 9722
 SERVICE_NAME = "Wingman"
-SERVICE_VERSION = 1.7
+SERVICE_VERSION = 1.8
 MY_CHARACTERS = []
 SUGGESTIONS_TO_MAKE = 10
 RANDOMIZE_SUGGESTIONS = False
@@ -57,6 +57,7 @@ OVERKINKING_PENALTY_FLOOR = 200
 OVERKINKING_MODIFIER = 5
 MAX_EXTRA_CREDIT = 1.2
 PICTURE_IS_WORTH = 1000
+INDECISIVENESS_FLOOR = 70
 
 #Caches
 TICKET = None
@@ -308,6 +309,7 @@ def grade_character(json, my_json):
 	matches = 0
 	num_mismatches = 0
 	if not len(kinks) <= UNDERKINKING_BONUS_FLOOR:
+		faves = len([x for x in kinks if kinks[x] == 'fave'])
 		for kink, rating in my_kinks.items():
 			if kink in kinks:
 				if kinks[kink] == rating:
@@ -320,7 +322,7 @@ def grade_character(json, my_json):
 					matches -= 1 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
 				elif (rating == 'no' and kinks[kink] == 'yes') or (rating == 'yes' and kinks[kink] == 'no'):
 					matches -= 0.5 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
-		grades['kink matching'] = cap_grade((matches if matches >= 0 else 0), EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching']
+		grades['kink matching'] = cap_grade((matches if matches >= 0 else 0), EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching'] * (1 if faves <= INDECISIVENESS_FLOOR else 1/(faves/INDECISIVENESS_FLOOR))
 	else:
 		normal_grade = cap_grade(len(custom_kinks), EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching']
 		grades['kink matching'] =  (normal_grade if len(custom_kinks) <= EXPECTED_MAXIMUM_CUSTOM_KINKS else (normal_grade - (len(custom_kinks)/EXPECTED_MAXIMUM_CUSTOM_KINKS) if normal_grade - (len(custom_kinks)/EXPECTED_MAXIMUM_CUSTOM_KINKS) > 0 else 0))
