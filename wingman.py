@@ -6,6 +6,7 @@ import sys, getopt
 import websockets, asyncio
 import uuid
 import webbrowser
+import traceback
 from random import shuffle
 
 #Program settings
@@ -16,7 +17,7 @@ CHANNEL = ""
 HOST = "chat.f-list.net"
 PORT = 9722
 SERVICE_NAME = "Wingman"
-SERVICE_VERSION = 1.8
+SERVICE_VERSION = 1.9
 MY_CHARACTERS = []
 SUGGESTIONS_TO_MAKE = 10
 RANDOMIZE_SUGGESTIONS = False
@@ -38,7 +39,7 @@ GRADE_WEIGHTS = {'profile play' : 0.01,
 		 }
 BAD_SPECIES_LIST = []
 GOOD_SPECIES_LIST = []
-AUTOFAIL_DESCRIPTION_LIST = ['murr', 'yiff', ' owo ', ' uwu ', ' ._.', ' >.<', ' :3', ' >:3', ' >_>']
+AUTOFAIL_DESCRIPTION_LIST = ['murr', 'yiff', ' owo ', ' uwu ', ' ._.', ' >.<', ' :3', ' >:3', ' >_>', '^^']
 BBCODE_TAG_LIST = {'[b]' : 4,
 		   '[big]' : 2,
 		   '[indent]' : 4,
@@ -48,7 +49,7 @@ BBCODE_TAG_LIST = {'[b]' : 4,
 EXPECTED_NUMBER_CUSTOM_KINKS = 5
 EXPECTED_MAXIMUM_CUSTOM_KINKS = 100
 EXPECTED_DESCRIPTION_LENGTH = 2500
-EXPECTED_MATCHING_KINKS = 50
+EXPECTED_MATCHING_KINKS = 0.75
 PROBABLE_WIP_DESCRIPTION_LENGTH = 750
 LINEBREAK_PER_CHARACTERS = 150
 SPELLING_ERROR_PER_CHARACTERS = 2500
@@ -112,6 +113,8 @@ def bookmarks(ticket):
 	return BOOKMARKS
 
 def cap_grade(num_points, max_points):
+	if max_points <= 0:
+		return 0
 	grade = num_points/max_points
 	overflow_grade = grade - 1
 	if overflow_grade > 0:
@@ -201,17 +204,12 @@ def test_furry_matching(json1, json2):
 	return True
 
 def grade_character(json, my_json):
-	if json['error'] != '':
-		print_error(json['error'])
-		return -1
-	if my_json['error'] != '':
-		print_error(my_json['error'])
-		return -1
 	if REJECT_ODD_GENDERS and not get_info_by_name('Gender') in json['infotags']:
 		return 0
 	elif REJECT_ODD_GENDERS and json['infotags'][get_info_by_name('Gender')] != get_infotag('Male') and\
 		   json['infotags'][get_info_by_name('Gender')] != get_infotag('Female'):
-			return 0
+		return 0
+		
 	if not test_orientation_matching(json, my_json):
 		return 0
 	if not test_orientation_matching(my_json, json):
@@ -220,6 +218,7 @@ def grade_character(json, my_json):
 		return 0
 	if not test_furry_matching(my_json, json):
 		return 0
+		
 	if get_info_by_name('Orientation') in my_json['infotags']:
 		if my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - female preference') and get_info_by_name('Gender') in json['infotags'] and\
 		     json['infotags'][get_info_by_name('Gender')] == get_infotag('Male'):
@@ -227,20 +226,38 @@ def grade_character(json, my_json):
 		elif my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - male preference') and get_info_by_name('Gender') in json['infotags'] and\
 		     json['infotags'][get_info_by_name('Gender')] == get_infotag('Female'):
 			return 0
+			
 	if len(DISALLOWED_COCK_SHAPES) > 0 and get_info_by_name('Cock shape') in json['infotags'] and (not get_info_by_name('Gender') in json['infotags'] or json['infotags'][get_info_by_name('Gender')] != get_infotag('Female')):
 		for shape in DISALLOWED_COCK_SHAPES:
 			if json['infotags'][get_info_by_name('Cock shape')] == get_infotag(shape):
 				return 0
+				
 	try:
 		global BLACKLIST
 		if BLACKLIST == None:
 			with open('blacklist.txt', 'a+') as blacklist:
 				blacklist.seek(0)
-				BLACKLIST = blacklist.readlines()
-		if json['name'] in [x.strip() for x in BLACKLIST]:
+				BLACKLIST = [x.strip() for x in blacklist.readlines()]
+		if json['name'] in BLACKLIST:
 			   return 0
 	except IOError:
 		pass
+	
+	bookmark = bookmarks(ticket())
+	if bookmark['error'] == '' and json['name'] in bookmark['characters']:
+		return 0
+		
+	return do_grade_character(json, my_json)
+	
+	
+
+def do_grade_character(json, my_json):
+	if json['error'] != '':
+		print_error(json['error'])
+		return -1
+	if my_json['error'] != '':
+		print_error(my_json['error'])
+		return -1
 			
 	grades = defaultdict(int)
 	grades['bad species'] = GRADE_WEIGHTS['bad species']
@@ -255,10 +272,6 @@ def grade_character(json, my_json):
 	     grades['bad species'] = grades['bad species']/2
 	     
 	name = json['name']
-	
-	bookmark = bookmarks(ticket())
-	if bookmark['error'] == '' and name in bookmark['characters']:
-		return 0
 	
 	grades['name punctuation'] = (0 if ' ' in name or '-' in name or '_' in name or name.capitalize() != name else 1) * GRADE_WEIGHTS['name punctuation']
 	
@@ -303,28 +316,32 @@ def grade_character(json, my_json):
 		grades['literacy'] = cap_grade(spellcheck_api(description_notags, inline_modifier), SPELLING_ERROR_PER_CHARACTERS) * GRADE_WEIGHTS['literacy']
 	else:
 		grades['literacy'] = cap_grade(description_length, PROBABLE_WIP_DESCRIPTION_LENGTH) * GRADE_WEIGHTS['literacy']
+		
+	if grades['description length'] > GRADE_WEIGHTS['description length'] and grades['literacy'] < 0.75 * GRADE_WEIGHTS['literacy']:
+		grades['description length'] = GRADE_WEIGHTS['description length']
 	
 	kinks = get_kinks(json)
 	my_kinks = get_kinks(my_json)
 	matches = 0
-	num_mismatches = 0
+	shared = 0
 	if not len(kinks) <= UNDERKINKING_BONUS_FLOOR:
 		faves = len([x for x in kinks if kinks[x] == 'fave'])
 		for kink, rating in my_kinks.items():
-			if kink in kinks:
+			if kink in kinks and not (kinks[kink] == 'no' and rating == 'no'):
+				shared += 1
 				if kinks[kink] == rating:
 					matches += 1
 				elif (rating == 'fave' and kinks[kink] == 'yes') or (rating == 'yes' and kinks[kink] == 'fave'):
 					matches += 0.75
 				elif (rating == 'maybe' and kinks[kink] == 'yes') or (rating == 'maybe' and kinks[kink] == 'fave'):
-					matches += 0.25
-				elif (rating == 'no' and kinks[kink] == 'fave') or (rating == 'fave' and kinks[kink] == 'no'):
+					matches += 0.5
+				'''elif (rating == 'no' and kinks[kink] == 'fave') or (rating == 'fave' and kinks[kink] == 'no'):
 					matches -= 1 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
 				elif (rating == 'no' and kinks[kink] == 'yes') or (rating == 'yes' and kinks[kink] == 'no'):
-					matches -= 0.5 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)
-		grades['kink matching'] = cap_grade((matches if matches >= 0 else 0), EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching'] * (1 if faves <= INDECISIVENESS_FLOOR else 1/(faves/INDECISIVENESS_FLOOR))
+					matches -= 0.5 * ((len(kinks)/OVERKINKING_PENALTY_FLOOR)*OVERKINKING_MODIFIER if len(kinks) > OVERKINKING_PENALTY_FLOOR else 1)'''
+		grades['kink matching'] = cap_grade((matches if matches >= 0 else 0), shared * EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching'] * (1 if faves <= INDECISIVENESS_FLOOR else 1/(faves/INDECISIVENESS_FLOOR))
 	else:
-		normal_grade = cap_grade(len(custom_kinks), EXPECTED_MATCHING_KINKS) * GRADE_WEIGHTS['kink matching']
+		normal_grade = cap_grade(len(custom_kinks), 50) * GRADE_WEIGHTS['kink matching']
 		grades['kink matching'] =  (normal_grade if len(custom_kinks) <= EXPECTED_MAXIMUM_CUSTOM_KINKS else (normal_grade - (len(custom_kinks)/EXPECTED_MAXIMUM_CUSTOM_KINKS) if normal_grade - (len(custom_kinks)/EXPECTED_MAXIMUM_CUSTOM_KINKS) > 0 else 0))
 	total_grade = 0
 	for rubric, grade in grades.items():
@@ -364,7 +381,7 @@ if __name__ == '__main__':
 	my_character = request_character(CHARACTER, ticket())
 	if len(sys.argv) > 1:
 		character = request_character(" ".join(sys.argv[1:]), ticket())
-		grade = grade_character(character,my_character)
+		grade = do_grade_character(character,my_character)
 		if grade >= 0:
 			print('Grade: ', grade)
 	else:
@@ -389,16 +406,20 @@ if __name__ == '__main__':
 					num_errors = 0
 					while True:
 						character = request_character(char['identity'], ticket())
-						graded_characters[char['identity']] = grade_character(character,my_character)
-						if graded_characters[char['identity']] >= 0 or num_errors > 10:
-							cur_char += 1
-							if num_errors > 10:
-								print("Couldn't grade {0}.".format(char['identity']))
-							break
+						if character['error'] == '':
+							graded_characters[char['identity']] = grade_character(character,my_character)
+							if graded_characters[char['identity']] >= 0 or num_errors > 10:
+								cur_char += 1
+								if num_errors > 10:
+									print("Couldn't grade {0}.".format(char['identity']))
+								break
+							else:
+								num_errors += 1
 						else:
-							num_errors += 1
-				except Exception as e:
-					print("\nCouldn't grade {0}: \n{1}".format(char['identity'],e))
+							TICKET = None
+				except Exception:
+					print("\nCouldn't grade {0}: \n{1}".format(char['identity'],traceback.format_exc()))
+					#print(character)
 		print()
 		top_chars = sorted(graded_characters, key = (lambda x: graded_characters[x]), reverse = True)
 		if graded_characters[top_chars[0]] < QUALITY_CUTOFF:
