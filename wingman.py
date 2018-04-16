@@ -17,11 +17,12 @@ CHANNEL = ""
 HOST = "chat.f-list.net"
 PORT = 9722
 SERVICE_NAME = "Wingman"
-SERVICE_VERSION = 1.9
+SERVICE_VERSION = 2.0
 MY_CHARACTERS = []
 SUGGESTIONS_TO_MAKE = 10
 RANDOMIZE_SUGGESTIONS = False
 REJECT_ODD_GENDERS = False
+STRICT_MATCHING = False
 QUALITY_CUTOFF = 80
 DISALLOWED_COCK_SHAPES = []
 
@@ -51,7 +52,7 @@ EXPECTED_MAXIMUM_CUSTOM_KINKS = 100
 EXPECTED_DESCRIPTION_LENGTH = 2500
 EXPECTED_MATCHING_KINKS = 0.75
 PROBABLE_WIP_DESCRIPTION_LENGTH = 750
-LINEBREAK_PER_CHARACTERS = 150
+LINEBREAK_PER_CHARACTERS = 500
 SPELLING_ERROR_PER_CHARACTERS = 2500
 UNDERKINKING_BONUS_FLOOR = 20
 OVERKINKING_PENALTY_FLOOR = 200
@@ -59,6 +60,7 @@ OVERKINKING_MODIFIER = 5
 MAX_EXTRA_CREDIT = 1.2
 PICTURE_IS_WORTH = 1000
 INDECISIVENESS_FLOOR = 70
+FORMATTING_ALLOWANCE = 500
 
 #Caches
 TICKET = None
@@ -89,10 +91,14 @@ def request_ticket():
 		return 0
 
 def print_error(text):
-	print('Error: ',text)
-	if 'ticket' in text:
-		global TICKET
-		TICKET = None
+	print('\nError: ',text)
+	try:
+		if 'ticket' in text:
+			global TICKET
+			TICKET = None
+	except TypeError:
+		return
+		#that wasn't iterable
 
 def ticket():
 	global TICKET
@@ -185,6 +191,8 @@ def test_orientation_matching(json1, json2):
 	if get_info_by_name('Orientation') in json1['infotags'] and get_info_by_name('Orientation') in json2['infotags']:
 		if json1['infotags'][get_info_by_name('Orientation')] == get_infotag('Gay') and json2['infotags'][get_info_by_name('Orientation')] == get_infotag('Straight'):
 			return False
+	elif STRICT_MATCHING:
+		return False
 	if get_info_by_name('Orientation') in json1['infotags']:
 		if json1['infotags'][get_info_by_name('Orientation')] == get_infotag('Gay') and get_info_by_name('Gender') in json1['infotags'] and get_info_by_name('Gender') in json2['infotags'] and\
 		     ((json1['infotags'][get_info_by_name('Gender')] == get_infotag('Male') and json2['infotags'][get_info_by_name('Gender')] == get_infotag('Female')) or\
@@ -192,6 +200,10 @@ def test_orientation_matching(json1, json2):
 			return False
 		elif json1['infotags'][get_info_by_name('Orientation')] == get_infotag('Straight') and get_info_by_name('Gender') in json1['infotags'] and get_info_by_name('Gender') in json2['infotags'] and\
 		     json1['infotags'][get_info_by_name('Gender')] == json2['infotags'][get_info_by_name('Gender')]:
+			return False
+		elif STRICT_MATCHING and json1['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - male preference') and get_info_by_name('Gender') in json2['infotags'] and json2['infotags'][get_info_by_name('Gender')] == get_infotag('Female'):
+			return False
+		elif STRICT_MATCHING and json1['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - female preference') and get_info_by_name('Gender') in json2['infotags'] and json2['infotags'][get_info_by_name('Gender')] == get_infotag('Male'):
 			return False
 	return True
 	
@@ -201,8 +213,26 @@ def test_furry_matching(json1, json2):
 			return False
 		elif json1['infotags'][get_info_by_name('Furry preference')] == get_infotag('No humans, just furry characters') and json2['infotags'][get_info_by_name('Body type')] == get_infotag('Human'):
 			return False
+		elif STRICT_MATCHING and json1['infotags'][get_info_by_name('Furry preference')] == get_infotag('Humans ok, Furries Preferred') and json2['infotags'][get_info_by_name('Body type')] == get_infotag('Human'):
+			return False
+		elif STRICT_MATCHING and json1['infotags'][get_info_by_name('Furry preference')] == get_infotag('Furries ok, Humans Preferred') and json2['infotags'][get_info_by_name('Body type')] == get_infotag('Anthro'):
+			return False
+	elif STRICT_MATCHING:
+		return False
 	return True
 
+def test_role_matching(json1, json2):
+	if get_info_by_name('Dom/Sub Role') in json1['infotags'] and get_info_by_name('Dom/Sub Role') in json2['infotags']:
+		if json1['infotags'][get_info_by_name('Dom/Sub Role')] in [get_infotag('Always submissive'), get_infotag('Usually submissive')] and (json2['infotags'][get_info_by_name('Dom/Sub Role')] in [get_infotag('Always submissive'), get_infotag('Usually submissive')]\
+		or (STRICT_MATCHING and not json2['infotags'][get_info_by_name('Dom/Sub Role')] in [get_infotag('Always dominant'), get_infotag('Usually dominant')])):
+			return False
+		elif json1['infotags'][get_info_by_name('Dom/Sub Role')] in [get_infotag('Always dominant'), get_infotag('Usually dominant')] and (json2['infotags'][get_info_by_name('Dom/Sub Role')] in [get_infotag('Always dominant'), get_infotag('Usually dominant')]\
+		or (STRICT_MATCHING and not json2['infotags'][get_info_by_name('Dom/Sub Role')] in [get_infotag('Always submissive'), get_infotag('Usually submissive')])):
+			return False
+	elif STRICT_MATCHING:
+		return False
+	return True
+	
 def grade_character(json, my_json):
 	if REJECT_ODD_GENDERS and not get_info_by_name('Gender') in json['infotags']:
 		return 0
@@ -210,14 +240,21 @@ def grade_character(json, my_json):
 		   json['infotags'][get_info_by_name('Gender')] != get_infotag('Female'):
 		return 0
 		
-	if not test_orientation_matching(json, my_json):
-		return 0
-	if not test_orientation_matching(my_json, json):
-		return 0
-	if not test_furry_matching(json, my_json):
-		return 0
-	if not test_furry_matching(my_json, json):
-		return 0
+	if not STRICT_MATCHING or get_info_by_name('Orientation') in my_json['infotags']:
+		if not test_orientation_matching(json, my_json):
+			return 0
+		if not test_orientation_matching(my_json, json):
+			return 0
+	if not STRICT_MATCHING or get_info_by_name('Furry preference') in my_json['infotags']:
+		if not test_furry_matching(json, my_json):
+			return 0
+		if not test_furry_matching(my_json, json):
+			return 0
+	if not STRICT_MATCHING or get_info_by_name('Dom/Sub Role') in my_json['infotags']:
+		if not test_role_matching(json, my_json):
+			return 0
+		if not test_role_matching(my_json, json):
+			return 0
 		
 	if get_info_by_name('Orientation') in my_json['infotags']:
 		if my_json['infotags'][get_info_by_name('Orientation')] == get_infotag('Bi - female preference') and get_info_by_name('Gender') in json['infotags'] and\
@@ -303,8 +340,9 @@ def do_grade_character(json, my_json):
 
 	description_length = len(description_notags)
 	inline_modifier = (description.count('[img') + (len(images)/5 if description_length < EXPECTED_DESCRIPTION_LENGTH and description_length > PROBABLE_WIP_DESCRIPTION_LENGTH else 0) + len(re.findall(re.compile("\[url=.*?(.png|.jpg|.jpeg|.gif)\]"), description))) * PICTURE_IS_WORTH
-	linebreaks_allowed = (description_length+(inline_modifier/2))/LINEBREAK_PER_CHARACTERS
-	linebreaks = re.sub("[\[].*?[\]]", "", re.sub("(\[quote\]|\r\n\[url).*?(\[\/quote\]|\[\/url\])","",description, flags = re.DOTALL)).count('\n')
+	formatting_allowance = ((description.count('[img') + description.count('[size') + description.count('[color') + description.count('[b') + description.count('[color') + description.count('[indent')) * (PICTURE_IS_WORTH/2)) if description_length < EXPECTED_DESCRIPTION_LENGTH and description_length > PROBABLE_WIP_DESCRIPTION_LENGTH else ((description.count('[img') + len(re.findall(re.compile("\[url=.*?(.png|.jpg|.jpeg|.gif)\]"), description))) * PICTURE_IS_WORTH)
+	linebreaks_allowed = 2*((description_length+(formatting_allowance/2))/LINEBREAK_PER_CHARACTERS)
+	linebreaks = re.sub("[\[].*?[\]]", "", re.sub("(\[small\]|\[center\]|\[indent\]|\[quote\]|\r\n\[url).*?(\[\/small\]|\[\/center\]|\[\/indent\]|\[\/quote\]|\[\/url\])","",description, flags = re.DOTALL)).count('\n')
 	linebreak_to_text_ratio = linebreaks_allowed / (1 if linebreaks < 1 else linebreaks)
 	if linebreak_to_text_ratio > MAX_EXTRA_CREDIT:
 		linebreak_to_text_ratio = MAX_EXTRA_CREDIT
@@ -394,12 +432,14 @@ if __name__ == '__main__':
 		chars = json.loads(CHARACTER_LIST)
 		graded_characters = defaultdict(int)
 		cur_char = 0
+		NUM_CHARS = 0
+		DISQ_CHARS = 0
 		for char in chars['users']:
-			num_dashes = int(50*(cur_char/len(chars['users'])))
-			num_spaces = int(50*((len(chars['users'])-cur_char)/len(chars['users'])))
-			while num_dashes+num_spaces < 50:
+			num_dashes = int(60*(cur_char/len(chars['users'])))
+			num_spaces = int(60*((len(chars['users'])-cur_char)/len(chars['users'])))
+			while num_dashes+num_spaces < 60:
 				num_dashes += 1
-			sys.stdout.write("\r[" + "="*num_dashes + " "*num_spaces + "]")
+			sys.stdout.write("\r[" + "="*num_dashes + " "*num_spaces + "] " + str(int(DISQ_CHARS/(1 if NUM_CHARS == 0 else NUM_CHARS)*100)) + "% DQ  ")
 			sys.stdout.flush()
 			if not char['identity'] in MY_CHARACTERS:
 				try:
@@ -409,12 +449,15 @@ if __name__ == '__main__':
 						if character['error'] == '':
 							graded_characters[char['identity']] = grade_character(character,my_character)
 							if graded_characters[char['identity']] >= 0 or num_errors > 10:
+								NUM_CHARS += 1
+								DISQ_CHARS += (0 if graded_characters[char['identity']] > 0 else 1)
 								cur_char += 1
 								if num_errors > 10:
-									print("Couldn't grade {0}.".format(char['identity']))
+									print("\nCouldn't grade {0}.".format(char['identity']))
 								break
 							else:
 								num_errors += 1
+								DISQ_CHARS += 1
 						else:
 							TICKET = None
 				except Exception:
