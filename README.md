@@ -26,6 +26,7 @@ Configuration
 * GOOD_SPECIES_LIST: The words in this list will give extra credit if the profile's species contains them.
 * AUTOFAIL_DESCRIPTION_LIST: Anything in this list found in a profile's description will result in the profile being discarded.
 * DISALLOWED_COCK_SHAPES: If specified, any profile that has a cock shape in this list will be discarded.
+* STRICT_MATCHING: If enabled, you will only be shown profiles that definitely fit your tastes (for instance, submissives will only be shown dominants, not switches).
 
 Dependencies
 ============
