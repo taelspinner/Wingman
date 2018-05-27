@@ -7,6 +7,7 @@ import websockets, asyncio
 import uuid
 import webbrowser
 import traceback
+import hashlib
 from random import shuffle
 
 #Program settings
@@ -17,8 +18,7 @@ CHANNEL = ""
 HOST = "chat.f-list.net"
 PORT = 9722
 SERVICE_NAME = "Wingman"
-SERVICE_VERSION = 2.0
-MY_CHARACTERS = []
+SERVICE_VERSION = 2.1
 SUGGESTIONS_TO_MAKE = 10
 RANDOMIZE_SUGGESTIONS = False
 REJECT_ODD_GENDERS = False
@@ -40,7 +40,7 @@ GRADE_WEIGHTS = {'profile play' : 0.01,
 		 }
 BAD_SPECIES_LIST = []
 GOOD_SPECIES_LIST = []
-AUTOFAIL_DESCRIPTION_LIST = ['murr', 'yiff', ' owo ', ' uwu ', ' ._.', ' >.<', ' :3', ' >:3', ' >_>', '^^']
+AUTOFAIL_DESCRIPTION_LIST = ['murr', 'yiff', ' owo ', ' uwu ', ' ._.', ' >.<', ' :3', ' >:3', ' >_>', '^^', '^,~']
 BBCODE_TAG_LIST = {'[b]' : 4,
 		   '[big]' : 2,
 		   '[indent]' : 4,
@@ -61,6 +61,7 @@ MAX_EXTRA_CREDIT = 1.2
 PICTURE_IS_WORTH = 1000
 INDECISIVENESS_FLOOR = 70
 FORMATTING_ALLOWANCE = 500
+DEFAULT_AVATAR_CHECKSUM = b'`\xa0\xd4/\x92\xdcn\xaf?8\x99-o\xc8(\xd9\x02\x9a[G'
 
 #Caches
 TICKET = None
@@ -80,10 +81,22 @@ def post_json(url, forms = {}):
 		except Exception as e:
 			print_error(e)
 	return resp.json()
-
+	
+def request_avatar(character):
+	succeeded = False
+	while not succeeded:
+		try:
+			resp = requests.get("https://static.f-list.net/images/avatar/{}.png".format(character.lower()), timeout=10)
+			succeeded = True
+		except Exception as e:
+			print_error(e)
+	return hashlib.sha1(resp.content)
+	
 def request_ticket():
-	forms = {"account" : USERNAME, "password" : PASSWORD}
+	forms = {"account" : USERNAME, "password" : PASSWORD, "no_characters" : "true"}
 	ticket_json = post_json('https://www.f-list.net/json/getApiTicket.php', forms)
+	global BOOKMARKS
+	BOOKMARKS = set().update([x['name'] for x in ticket_json['bookmarks']] + [x['source_name'] for x in ticket_json['friends']])
 	if ticket_json['error'] == '':
 		return ticket_json['ticket']
 	else:
@@ -295,6 +308,9 @@ def do_grade_character(json, my_json):
 	if my_json['error'] != '':
 		print_error(my_json['error'])
 		return -1
+		
+	if request_avatar(json['name']).digest() == DEFAULT_AVATAR_CHECKSUM:
+		return 0
 			
 	grades = defaultdict(int)
 	grades['bad species'] = GRADE_WEIGHTS['bad species']
@@ -439,30 +455,35 @@ if __name__ == '__main__':
 			num_spaces = int(60*((len(chars['users'])-cur_char)/len(chars['users'])))
 			while num_dashes+num_spaces < 60:
 				num_dashes += 1
-			sys.stdout.write("\r[" + "="*num_dashes + " "*num_spaces + "] " + str(int(DISQ_CHARS/(1 if NUM_CHARS == 0 else NUM_CHARS)*100)) + "% DQ  ")
+			sys.stdout.write("\r[" + "="*num_dashes + " "*num_spaces + "] " + str(int(DISQ_CHARS/(1 if NUM_CHARS == 0 else NUM_CHARS)*100)) + "% DQ  " + "Grading {}".format(char['identity']) + " "*17)
 			sys.stdout.flush()
-			if not char['identity'] in MY_CHARACTERS:
-				try:
-					num_errors = 0
-					while True:
-						character = request_character(char['identity'], ticket())
-						if character['error'] == '':
-							graded_characters[char['identity']] = grade_character(character,my_character)
-							if graded_characters[char['identity']] >= 0 or num_errors > 10:
-								NUM_CHARS += 1
-								DISQ_CHARS += (0 if graded_characters[char['identity']] > 0 else 1)
-								cur_char += 1
-								if num_errors > 10:
-									print("\nCouldn't grade {0}.".format(char['identity']))
-								break
-							else:
-								num_errors += 1
-								DISQ_CHARS += 1
+			try:
+				num_errors = 0
+				while True:
+					character = request_character(char['identity'], ticket())
+					if character['error'] == '' and not character['is_self']:
+						graded_characters[char['identity']] = grade_character(character,my_character)
+						if graded_characters[char['identity']] >= 0 or num_errors > 10:
+							NUM_CHARS += 1
+							DISQ_CHARS += (0 if graded_characters[char['identity']] > 0 else 1)
+							cur_char += 1
+							if num_errors > 10:
+								print("\nCouldn't grade {0}.".format(char['identity']))
+							break
 						else:
-							TICKET = None
-				except Exception:
-					print("\nCouldn't grade {0}: \n{1}".format(char['identity'],traceback.format_exc()))
-					#print(character)
+							num_errors += 1
+							DISQ_CHARS += 1
+							break
+					elif character['error'] == "Invalid ticket.":
+						TICKET = None
+					else:
+						cur_char += 1
+						NUM_CHARS += 1
+						DISQ_CHARS += 1
+						break
+			except Exception:
+				print("\nCouldn't grade {0}: \n{1}".format(char['identity'],traceback.format_exc()))
+				#print(character)
 		print()
 		top_chars = sorted(graded_characters, key = (lambda x: graded_characters[x]), reverse = True)
 		if graded_characters[top_chars[0]] < QUALITY_CUTOFF:
