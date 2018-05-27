@@ -7,7 +7,6 @@ Setup
 2. Put your login details in the ACCOUNT and PASSWORD variables.
 3. Select a character to compare kink compatibility with and put their name in the CHARACTER variable.
 4. Put the name of a public channel, or code of a private one, in the CHANNEL variable.
-5. Put the names of all of your characters in the MY_CHARACTERS variable (in individual sets of quotation marks, separated by commas).
 
 Use
 ===
