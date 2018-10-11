@@ -6,7 +6,7 @@ Setup
 1. Open wingman.py in the text editor of your choice.
 2. Put your login details in the ACCOUNT and PASSWORD variables.
 3. Select a character to compare kink compatibility with and put their name in the CHARACTER variable.
-4. Put the name of a public channel, or code of a private one, in the CHANNEL variable.
+4. Put the names of public channels, or codes of private ones, in the CHANNELS list variable (like so: ["Sex Driven LFRP", "adh-f051bba3c0104d2954c9"]).
 
 Use
 ===
