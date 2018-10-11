@@ -14,11 +14,11 @@ from random import shuffle
 USERNAME = ""
 PASSWORD = ""
 CHARACTER = ""
-CHANNEL = ""
+CHANNELS = []
 HOST = "chat.f-list.net"
 PORT = 9722
 SERVICE_NAME = "Wingman"
-SERVICE_VERSION = 2.1
+SERVICE_VERSION = 2.2
 SUGGESTIONS_TO_MAKE = 10
 RANDOMIZE_SUGGESTIONS = False
 REJECT_ODD_GENDERS = False
@@ -28,16 +28,16 @@ DISALLOWED_COCK_SHAPES = []
 
 #Character grading settings
 GRADE_WEIGHTS = {'profile play' : 0.01,
-		 'bad species' : 0.04,
-		 'bbcode abuse' : 0.05,
-		 'punctuation' : 0.05,
-		 'name punctuation' : 0.05,
-		 'no images' : 0.1,
-		 'literacy' : 0.125,
-		 'custom kinks' : 0.125,
-		 'description length' : 0.15,
-		 'kink matching' : 0.3
-		 }
+		'bad species' : 0.04,
+		'bbcode abuse' : 0.05,
+		'punctuation' : 0.05,
+		'name punctuation' : 0.05,
+		'no images' : 0.1,
+		'literacy' : 0.125,
+		'custom kinks' : 0.125,
+		'description length' : 0.15,
+		'kink matching' : 0.3
+		}
 BAD_SPECIES_LIST = []
 GOOD_SPECIES_LIST = []
 AUTOFAIL_DESCRIPTION_LIST = ['murr', 'yiff', ' owo ', ' uwu ', ' ._.', ' >.<', ' :3', ' >:3', ' >_>', '^^', '^,~']
@@ -67,10 +67,8 @@ DEFAULT_AVATAR_CHECKSUM = b'`\xa0\xd4/\x92\xdcn\xaf?8\x99-o\xc8(\xd9\x02\x9a[G'
 TICKET = None
 INFO_LIST = None
 MAP_LIST = None
-CHARACTER_LIST = None
 SPELLCHECK = None
-BOOKMARKS = None
-BLACKLIST = None
+CHARACTER_LIST = set()
 
 def post_json(url, forms = {}):
 	succeeded = False
@@ -92,11 +90,11 @@ def request_avatar(character):
 			print_error(e)
 	return hashlib.sha1(resp.content)
 	
-def request_ticket():
-	forms = {"account" : USERNAME, "password" : PASSWORD, "no_characters" : "true"}
+def request_ticket(bookmarks = None):
+	forms = {"account" : USERNAME, "password" : PASSWORD}
 	ticket_json = post_json('https://www.f-list.net/json/getApiTicket.php', forms)
-	global BOOKMARKS
-	BOOKMARKS = set().update([x['name'] for x in ticket_json['bookmarks']] + [x['source_name'] for x in ticket_json['friends']])
+	if bookmarks != None:
+		bookmarks |= set([x['name'] for x in ticket_json['bookmarks']] + [x['source_name'] for x in ticket_json['friends']] + ticket_json['characters'])
 	if ticket_json['error'] == '':
 		return ticket_json['ticket']
 	else:
@@ -112,24 +110,26 @@ def print_error(text):
 	except TypeError:
 		return
 		#that wasn't iterable
+		
+def print_progress_bar(current,total,description):
+	total_width = 60
+	num_dashes = int(total_width*(current/total))
+	num_spaces = int(total_width*((total-current)/total))
+	while num_dashes+num_spaces < total_width:
+		num_dashes += 1
+	sys.stdout.write("\r[" + "="*num_dashes + " "*num_spaces + "]  " + description)
+	sys.stdout.flush()
 
-def ticket():
+def ticket(bookmarks = None):
 	global TICKET
 	if TICKET == None:
-		TICKET = request_ticket()
+		TICKET = request_ticket(bookmarks)
 	return TICKET
 
 def request_character(name, ticket):
 	forms = {"account" : USERNAME, "ticket" : ticket, "name" : name}
 	character_json = post_json('https://www.f-list.net/json/api/character-data.php', forms)
 	return character_json
-	
-def bookmarks(ticket):
-	global BOOKMARKS
-	forms = {"account" : USERNAME, "ticket" : ticket}
-	if BOOKMARKS == None:
-		BOOKMARKS = post_json('https://www.f-list.net/json/api/bookmark-list.php', forms)
-	return BOOKMARKS
 
 def cap_grade(num_points, max_points):
 	if max_points <= 0:
@@ -232,6 +232,11 @@ def test_furry_matching(json1, json2):
 			return False
 	elif STRICT_MATCHING:
 		return False
+	if get_info_by_name('Furry preference') in json1['infotags'] and get_info_by_name('Species') in json2['infotags']:
+		if json1['infotags'][get_info_by_name('Furry preference')] == get_infotag('No humans, just furry characters') and json2['infotags'][get_info_by_name('Species')] == "Human":
+			return False
+		elif STRICT_MATCHING and json1['infotags'][get_info_by_name('Furry preference')] == get_infotag('No furry characters, just humans') and json2['infotags'][get_info_by_name('Species')] != "Human":
+			return False
 	return True
 
 def test_role_matching(json1, json2):
@@ -281,21 +286,6 @@ def grade_character(json, my_json):
 		for shape in DISALLOWED_COCK_SHAPES:
 			if json['infotags'][get_info_by_name('Cock shape')] == get_infotag(shape):
 				return 0
-				
-	try:
-		global BLACKLIST
-		if BLACKLIST == None:
-			with open('blacklist.txt', 'a+') as blacklist:
-				blacklist.seek(0)
-				BLACKLIST = [x.strip() for x in blacklist.readlines()]
-		if json['name'] in BLACKLIST:
-			   return 0
-	except IOError:
-		pass
-	
-	bookmark = bookmarks(ticket())
-	if bookmark['error'] == '' and json['name'] in bookmark['characters']:
-		return 0
 		
 	return do_grade_character(json, my_json)
 	
@@ -309,8 +299,6 @@ def do_grade_character(json, my_json):
 		print_error(my_json['error'])
 		return -1
 		
-	if request_avatar(json['name']).digest() == DEFAULT_AVATAR_CHECKSUM:
-		return 0
 			
 	grades = defaultdict(int)
 	grades['bad species'] = GRADE_WEIGHTS['bad species']
@@ -378,6 +366,7 @@ def do_grade_character(json, my_json):
 	my_kinks = get_kinks(my_json)
 	matches = 0
 	shared = 0
+	#print("{}/{}".format(len(kinks),len(post_json('https://www.f-list.net/json/api/mapping-list.php')['kinks'])))
 	if not len(kinks) <= UNDERKINKING_BONUS_FLOOR:
 		faves = len([x for x in kinks if kinks[x] == 'fave'])
 		for kink, rating in my_kinks.items():
@@ -410,8 +399,10 @@ async def hello(ticket):
 		while True:
 			receive = await websocket.recv()
 			break
-		join = "JCH {{\"channel\": \"{0}\"}}".format(CHANNEL)
-		await websocket.send(join)
+		for channel in CHANNELS:
+			join = "JCH {{\"channel\": \"{0}\"}}".format(channel)
+			await websocket.send(join)
+		received = 0
 		while True:
 			receive = await websocket.recv()
 			'''try:
@@ -424,18 +415,26 @@ async def hello(ticket):
 				if 'This command requires that you have logged in.' in receive:
 					print('(Sorry about that. Try running again.)')
 				if 'Could not locate the requested channel.' in receive:
+					print('(Malformed channel name. Check your channel list and try again.)')
+					quit()
+				if 'You are already in the requested channel.' in receive:
+					print('(Duplicate channel name. Check your channel list and try again.)')
 					quit()
 			if receive.startswith('ICH'):
 				global CHARACTER_LIST
-				CHARACTER_LIST = receive[4:]
+				CHARACTER_LIST |= set([list(x.values())[0] for x in json.loads(receive[4:])["users"]])
 				websocket.close()
+				received += 1
+				continue
+			if received >= len(CHANNELS):
 				return
 
 if __name__ == '__main__':
-	my_character = request_character(CHARACTER, ticket())
+	bookmarks = set()
+	my_character = request_character(CHARACTER, ticket(bookmarks))
 	if len(sys.argv) > 1:
 		character = request_character(" ".join(sys.argv[1:]), ticket())
-		grade = do_grade_character(character,my_character)
+		grade = grade_character(character,my_character)
 		if grade >= 0:
 			print('Grade: ', grade)
 	else:
@@ -444,46 +443,64 @@ if __name__ == '__main__':
 		except websockets.ConnectionClosed:
 			print('The connection was closed prematurely.')
 			quit()
-		print("Successfully grabbed profile list. {0} is grading them now.".format(SERVICE_NAME))
-		chars = json.loads(CHARACTER_LIST)
-		graded_characters = defaultdict(int)
+		print("Successfully grabbed profile list. Preloading the profile data...".format(SERVICE_NAME))
+		chars = []
 		cur_char = 0
-		NUM_CHARS = 0
-		DISQ_CHARS = 0
-		for char in chars['users']:
-			num_dashes = int(60*(cur_char/len(chars['users'])))
-			num_spaces = int(60*((len(chars['users'])-cur_char)/len(chars['users'])))
-			while num_dashes+num_spaces < 60:
-				num_dashes += 1
-			sys.stdout.write("\r[" + "="*num_dashes + " "*num_spaces + "] " + str(int(DISQ_CHARS/(1 if NUM_CHARS == 0 else NUM_CHARS)*100)) + "% DQ  " + "Grading {}".format(char['identity']) + " "*17)
-			sys.stdout.flush()
+		total_chars = len(CHARACTER_LIST)
+		blacklist = None
+		try:
+			with open('blacklist.txt', 'a+') as bl:
+				bl.seek(0)
+				blacklist = [x.strip() for x in bl.readlines()]
+		except IOError:
+			pass
+		for char in CHARACTER_LIST:
+			print_progress_bar(cur_char,total_chars,"Requesting {}".format(char) + " "*17)
 			try:
-				num_errors = 0
 				while True:
-					character = request_character(char['identity'], ticket())
+					if (blacklist != None and char in blacklist) or request_avatar(char).digest() == DEFAULT_AVATAR_CHECKSUM or char in bookmarks:
+						cur_char += 1
+						break
+					character = request_character(char, ticket())
 					if character['error'] == '' and not character['is_self']:
-						graded_characters[char['identity']] = grade_character(character,my_character)
-						if graded_characters[char['identity']] >= 0 or num_errors > 10:
-							NUM_CHARS += 1
-							DISQ_CHARS += (0 if graded_characters[char['identity']] > 0 else 1)
-							cur_char += 1
-							if num_errors > 10:
-								print("\nCouldn't grade {0}.".format(char['identity']))
-							break
-						else:
-							num_errors += 1
-							DISQ_CHARS += 1
-							break
+						chars.append(character)
+						cur_char += 1
+						break
 					elif character['error'] == "Invalid ticket.":
 						TICKET = None
 					else:
 						cur_char += 1
-						NUM_CHARS += 1
-						DISQ_CHARS += 1
 						break
 			except Exception:
-				print("\nCouldn't grade {0}: \n{1}".format(char['identity'],traceback.format_exc()))
+				print("\nCouldn't fetch {0}: \n{1}".format(char,traceback.format_exc()))
 				#print(character)
+		print_progress_bar(cur_char,total_chars,"Requesting {}...".format(char) + " "*17)
+		print("\nAll profiles loaded. {0} is grading them now.".format(SERVICE_NAME))
+		graded_characters = defaultdict(int)
+		cur_char = 0
+		total_chars = len(chars)
+		NUM_CHARS = 0
+		DISQ_CHARS = 0
+		for character in chars:
+			name = character['name']
+			print_progress_bar(cur_char,total_chars,str(int(DISQ_CHARS/(1 if NUM_CHARS == 0 else NUM_CHARS)*100)) + "% DQ  " + "Grading {}".format(name) + " "*17)
+			try:
+				num_errors = 0
+				while True:
+					graded_characters[name] = grade_character(character,my_character)
+					if graded_characters[name] >= 0 or num_errors > 10:
+						NUM_CHARS += 1
+						DISQ_CHARS += (0 if graded_characters[name] > 0 else 1)
+						cur_char += 1
+						if num_errors > 10:
+							print("\nCouldn't grade {0}.".format(name))
+						break
+					else:
+						num_errors += 1
+			except Exception:
+				print("\nCouldn't grade {0}: \n{1}".format(name,traceback.format_exc()))
+				#print(character)
+		print_progress_bar(cur_char,total_chars,str(int(DISQ_CHARS/(1 if NUM_CHARS == 0 else NUM_CHARS)*100)) + "% DQ  " + "Grading {}".format(name) + " "*17)
 		print()
 		top_chars = sorted(graded_characters, key = (lambda x: graded_characters[x]), reverse = True)
 		if graded_characters[top_chars[0]] < QUALITY_CUTOFF:
