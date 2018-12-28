@@ -1,5 +1,9 @@
 # Wingman
-A helper script for F-List that recommends you the best and most compatible profiles in an F-Chat channel.
+A helper script for F-List that recommends you the best and most compatible profiles in an F-Chat channel. It separates the wheat from the chaff with minimal effort on your part.
+
+Download
+========
+Click the green "Clone or download" button on the top right, and then click "Download ZIP."
 
 Setup
 =====
@@ -10,6 +14,9 @@ Setup
 
 Use
 ===
+* You'll need to install Python from https://www.python.org/downloads/release/python-372/ if you don't already have it.
+* Make sure you have the script's dependencies installed (listed below). You can use PIP to install them. Learn how to install packages at https://packaging.python.org/tutorials/installing-packages/.
+* Use the Command Prompt to run wingman.py for the best experience.
 * Run wingman.py to connect to the specified channel and receive a recommendation list compiled from the users therein. You will be logged out when the script starts if you're on that character, but can log in while grading is being done safely.
 * Specify the name of a profile to receive just the grade of that specific profile.
 * After the first time you run the script, a blacklist.txt file will be created in the folder. Put names of profiles in there to not have them recommended to you anymore.
