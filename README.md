@@ -1,6 +1,8 @@
 # Wingman
 A helper script for F-List that recommends you the best and most compatible profiles in an F-Chat channel. It separates the wheat from the chaff with minimal effort on your part.
 
+# BIG DISCLAIMER: This script hasn't been optimized in a long time and it uses a lot of API calls. If you use it the mods might get mad at you. If you want me to turn it into anything usable and efficient you'll have to yell at me.
+
 Download
 ========
 Click the green "Clone or download" button on the top right, and then click "Download ZIP."
